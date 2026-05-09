@@ -53,3 +53,22 @@ npm run dev
 - 拖拽片段移动；拖拽左右边缘拉伸时长；开启“吸附 cut”可对齐画面段落边界
 - 点击「导出 JSON」下载 `project.edited.json`
 
+## 版本管理（GitHub）
+
+本地已初始化 Git 并完成首次提交。把代码推到 GitHub 只需再建远程仓库并推送一次：
+
+1. 浏览器打开 <https://github.com/new>，新建仓库（例如名 `script_cut`），**不要**勾选添加 README（本地已有）。
+2. 在本项目目录终端执行（把 `你的用户名` 换成你的 GitHub 用户名）：
+
+```bash
+cd "/Users/wanghuijuan/Documents/script_cut"
+git remote add origin https://github.com/你的用户名/script_cut.git
+git push -u origin main
+```
+
+若 GitHub 要求登录：HTTPS 需使用 **Personal Access Token**（仓库设置里生成，权限勾选 `repo`），代替密码；或使用 **SSH**（本机 `ssh-keygen` 后把公钥加到 GitHub → Settings → SSH keys），并把上面地址改成 `git@github.com:你的用户名/script_cut.git`。
+
+可选：安装 [GitHub CLI](https://cli.github.com/) 后执行 `gh auth login`，再用 `gh repo create script_cut --private --source=. --remote=origin --push` 一条龙创建并推送。
+
+提交邮箱当前设为 `wanghuijuan@users.noreply.github.com`，若要改成自己的，可执行：`git config user.email "你的邮箱"`。
+
