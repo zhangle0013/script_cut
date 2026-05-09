@@ -1,0 +1,554 @@
+{
+  "stats": {
+    "shotsFound": 18,
+    "clipsFound": 17,
+    "cutsFound": 19
+  },
+  "project": {
+    "version": "0.1",
+    "inputPath": "/Users/wanghuijuan/chenxi_project/prompts/20260509_陈曦_Seedance_你外卖到了_宽屏分镜_v1.md",
+    "meta": {},
+    "tracks": [
+      {
+        "id": "trk_visual",
+        "type": "visual",
+        "name": "画面段落"
+      },
+      {
+        "id": "trk_dialogue",
+        "type": "dialogue",
+        "name": "对白"
+      },
+      {
+        "id": "trk_narration",
+        "type": "narration",
+        "name": "旁白"
+      },
+      {
+        "id": "trk_action",
+        "type": "action",
+        "name": "动作/节拍"
+      },
+      {
+        "id": "trk_info",
+        "type": "info",
+        "name": "信息/参考"
+      },
+      {
+        "id": "trk_subtitle",
+        "type": "subtitle",
+        "name": "字幕"
+      }
+    ],
+    "cuts": [
+      {
+        "id": "cut_001",
+        "t": 0
+      },
+      {
+        "id": "cut_002",
+        "t": 2
+      },
+      {
+        "id": "cut_003",
+        "t": 4
+      },
+      {
+        "id": "cut_004",
+        "t": 5.5
+      },
+      {
+        "id": "cut_005",
+        "t": 7
+      },
+      {
+        "id": "cut_006",
+        "t": 8.5
+      },
+      {
+        "id": "cut_007",
+        "t": 10
+      },
+      {
+        "id": "cut_008",
+        "t": 12
+      },
+      {
+        "id": "cut_009",
+        "t": 13.5
+      },
+      {
+        "id": "cut_010",
+        "t": 15
+      },
+      {
+        "id": "cut_011",
+        "t": 17
+      },
+      {
+        "id": "cut_012",
+        "t": 20
+      },
+      {
+        "id": "cut_013",
+        "t": 21.5
+      },
+      {
+        "id": "cut_014",
+        "t": 23
+      },
+      {
+        "id": "cut_015",
+        "t": 25
+      },
+      {
+        "id": "cut_016",
+        "t": 27
+      },
+      {
+        "id": "cut_017",
+        "t": 28
+      },
+      {
+        "id": "cut_018",
+        "t": 29
+      },
+      {
+        "id": "cut_019",
+        "t": 30
+      }
+    ],
+    "visualSegments": [
+      {
+        "id": "vs_001",
+        "start": 0,
+        "end": 2,
+        "label": "Shot 01",
+        "framing": "WIDE",
+        "camera": "Fixed",
+        "description": "Wasteland street. Heat haze DISTORTS the air above cracked orange earth — everything shimmers. Chen Xi walks through rubble in high heels, her silhouette sharp against the glare. Rhubarb follows behind, tongue hanging out, panting. In the distance, a faint electric motor WHINE grows steadily louder — an e-bike approaching through the dust haze. Sound of wind through ruins."
+      },
+      {
+        "id": "vs_002",
+        "start": 2,
+        "end": 4,
+        "label": "Shot 02",
+        "framing": "MID",
+        "camera": "Fast push",
+        "description": "A heavily rusted delivery e-bike BURSTS out from behind collapsed concrete. Faded logo on the cracked body reads \"Meituan · AI Rider 2126 Series.\" Headlight FLICKERS spasmodically in the dust. Mechanical joints CREAK and GRIND as it brakes hard — dust BILLOWS around locked wheels. Chen Xi stops walking, turns her head. Rhubarb's ears perk up."
+      },
+      {
+        "id": "vs_003",
+        "start": 4,
+        "end": 5.5,
+        "label": "Shot 03",
+        "framing": "MEDIUM CLOSE-UP",
+        "camera": "Over-the-shoulder",
+        "description": "E-bike dashboard screen CRACKLES to life — a pixelated smiley-face emoji appears on the corroded display. Blue glow casts on Chen Xi's shoulder. She stands in foreground, back to camera, facing the screen. Classic over-the-shoulder framing. Rhubarb beside her, head tilted in confusion, one ear up one ear down."
+      },
+      {
+        "id": "vs_004",
+        "start": 5.5,
+        "end": 7,
+        "label": "Shot 04",
+        "framing": "CLOSE-UP",
+        "camera": "Slow push on dashboard",
+        "description": "The cracked screen projects a FLICKERING order detail hologram. A date — 2126-06-15 — floats upward in pale blue light. Below it, a counter: \"Delivery Time: 72,318 days.\" The numbers TICK UPWARD in real-time. The hologram glitches once — a horizontal line of static — then stabilizes."
+      },
+      {
+        "id": "vs_005",
+        "start": 7,
+        "end": 8.5,
+        "label": "Shot 05",
+        "framing": "CLOSE-UP",
+        "camera": "Fixed — Mechanical arm extends",
+        "description": "A rusted mechanical arm extends from the cargo box with a hydraulic HISS. It clutches a stained paper takeout bag — the bottom corner is CRUMBLING away, exposing fossilized fries inside that glint with mineral crystals. The arm extends the bag toward Chen Xi with an awkward, programmed politeness — like a butler who hasn't had guests in two centuries."
+      },
+      {
+        "id": "vs_006",
+        "start": 8.5,
+        "end": 10,
+        "label": "Shot 06",
+        "framing": "MID",
+        "camera": "Over-the-shoulder reverse",
+        "description": "The AI screen FLICKERS — one pixel of the smiley goes dark, then returns. Chen Xi's expression shifts from wariness to complete disbelief. She glances up at the blazing sun overhead, then back at the screen. Rhubarb tilts its head the other way. The bag hangs in the air between them, held by the mechanical arm."
+      },
+      {
+        "id": "vs_007",
+        "start": 10,
+        "end": 12,
+        "label": "Shot 07",
+        "framing": "CLOSE-UP",
+        "camera": "Quick cut — The bag reveal",
+        "description": "Quick cut: Chen Xi's hands open the crumbling bag. Inside — french fries completely PETRIFIED into mineral, glinting with tiny crystalline deposits. They look like archaeological specimens. Quick cut: Rhubarb leans in to sniff the bag — then WHIPS its head back, sneezes VIOLENTLY. Shakes its entire body in protest, ears flapping."
+      },
+      {
+        "id": "vs_008",
+        "start": 12,
+        "end": 13.5,
+        "label": "Shot 08",
+        "framing": "MEDIUM CLOSE-UP",
+        "camera": "Slow push on Chen Xi",
+        "description": "Chen Xi stares at the screen, holding the open bag. The pixel smiley holds perfectly steady on the cracked dashboard. A half-second of unexpected stillness — she's not angry, not amused, just… processing. Dust settles around them. Wind catches a strand of her hair. Something shifts in her expression."
+      },
+      {
+        "id": "vs_009",
+        "start": 13.5,
+        "end": 15,
+        "label": "Shot 09",
+        "framing": "CLOSE-UP",
+        "camera": "Fixed — Reaching out",
+        "description": "Chen Xi's hand reaches out slowly — not grabbing, just reaching. Her fingertips touch the edge of the rusted bag the mechanical arm is holding. The corner of her mouth moves — not quite a smile, not quite not. The mechanical arm waits, perfectly still. A moment of unexpected gentleness in the middle of a wasteland.\n```"
+      },
+      {
+        "id": "vs_010",
+        "start": 15,
+        "end": 17,
+        "label": "Shot 10",
+        "framing": "MEDIUM CLOSE-UP",
+        "camera": "Slow push",
+        "description": "Chen Xi stares at the screen. Her expression shifts from amusement to something quieter — a half-second of unexpected stillness. The pixel smiley holds steady on the dashboard. Rhubarb sits, looking up at her. The dust around them settles slowly. The mechanical arm has retracted back into the cargo box with a soft hydraulic sigh."
+      },
+      {
+        "id": "vs_011",
+        "start": 17,
+        "end": 20,
+        "label": "Shot 11",
+        "framing": "CLOSE-UP",
+        "camera": "Fixed — Taking the bag",
+        "description": "Chen Xi is silent for two beats. Then she reaches out — gently — and takes the crumbling bag from the mechanical arm. She looks down at the fossilized fries inside. The corner of her mouth moves — not quite a smile, not quite not. She turns the bag slightly, a mineralized fry catching the amber light. The mechanical arm retracts fully with a soft click."
+      },
+      {
+        "id": "vs_012",
+        "start": 20,
+        "end": 21.5,
+        "label": "Shot 12",
+        "framing": "CLOSE-UP",
+        "camera": "Fixed — Quick insert",
+        "description": "The fossilized french fries in the ruined paper bag. EXTREME CLOSE-UP. One fry catches the amber sunset light — tiny mineral crystals SPARKLE on its surface like buried treasure. The paper crinkles slightly in Chen Xi's grip. The texture is stone, not food. But the shape is unmistakably a french fry."
+      },
+      {
+        "id": "vs_013",
+        "start": 21.5,
+        "end": 23,
+        "label": "Shot 13",
+        "framing": "CLOSE-UP",
+        "camera": "Fixed — Dashboard",
+        "description": "The e-bike dashboard. The AI smiley-face emoji FLICKERS — one pixel goes dark, then comes back. A system status bar briefly flashes: \"Battery: 3% · Estimated Range: Infinite\" — it glitches, then snaps back to the smile. The screen is cracked but the smile is perfect. Two centuries and it still hasn't stopped grinning."
+      },
+      {
+        "id": "vs_014",
+        "start": 23,
+        "end": 25,
+        "label": "Shot 14",
+        "framing": "MID",
+        "camera": "Fixed — New order",
+        "description": "The screen flashes a new order hologram: \"Next: Milk Tea × 2, Less Sugar, No Ice — Ordered: 2126-06-15 18:35.\" A BLURRED recipient avatar appears — a silhouette of someone who's been dead for 200 years — glitches, then vanishes. Chen Xi watches the screen, still holding the ruined bag in one hand."
+      },
+      {
+        "id": "vs_015",
+        "start": 25,
+        "end": 27,
+        "label": "Shot 15",
+        "framing": "WIDE",
+        "camera": "Slow pull back",
+        "description": "The AI e-bike slowly turns around — mechanical joints SCREECHING — and begins rolling away into the depths of the ruins. Its tail light BLINKS on and off in the dust haze, like a dying firefly. Chen Xi remains standing in the middle of the empty street, bag in hand. Rhubarb takes a step forward as if to follow the bike, then stops."
+      },
+      {
+        "id": "vs_016",
+        "start": 27,
+        "end": 28,
+        "label": "Shot 16",
+        "framing": "MID",
+        "camera": "Fixed — Rhubarb in the light",
+        "description": "Rhubarb sits in a shaft of god rays cutting through a broken wall. Amber light turns its fur golden at the edges — every hair catching the sun. It looks up at Chen Xi, then toward where the e-bike vanished into the haze, then back at Chen Xi. A quiet, single tail-wag — not excitement, just acknowledgment. Like it understood something."
+      },
+      {
+        "id": "vs_017",
+        "start": 28,
+        "end": 29,
+        "label": "Shot 17",
+        "framing": "EXTREME WIDE",
+        "camera": "Fixed — God rays",
+        "description": "Sunlight cuts through the skeletal frame of a collapsed skyscraper. Thick amber god rays spill across the empty street — dust particles suspended in the beams like floating gold. Silhouettes of Chen Xi and Rhubarb facing the direction the e-bike disappeared. The distant hum of the e-bike fades to an echo, then nothing. The stillness of a world that kept running after everyone left."
+      },
+      {
+        "id": "vs_018",
+        "start": 29,
+        "end": 30,
+        "label": "Shot 18",
+        "framing": "FREEZE FRAME",
+        "camera": "Freeze on silhouette + slow fade to black",
+        "description": "Image FREEZES on the backlit silhouette of Chen Xi and Rhubarb. The warm amber sunset washes the entire frame in sepia tones — like an old photograph being gently set down. After a beat, a very slow fade to black begins. The last thing visible: the tiny distant blink of the tail light, then gone.\n```"
+      }
+    ],
+    "clips": [
+      {
+        "id": "clip_001",
+        "trackId": "trk_narration",
+        "start": 0,
+        "end": 2,
+        "speaker": "陈曦",
+        "meta": "旁白，平淡，画外音",
+        "text": "2326年。地球是景区。",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_002",
+        "trackId": "trk_dialogue",
+        "start": 2,
+        "end": 4,
+        "speaker": "陈曦",
+        "meta": "停步抬头，视线被远处电动车吸引，意外",
+        "text": "什么鬼——还有人送外卖？",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_003",
+        "trackId": "trk_dialogue",
+        "start": 4,
+        "end": 6,
+        "speaker": "AI骑手",
+        "meta": "欢快播报，客服腔，明亮电子女声，随着刹车声切入",
+        "text": "您好！您的外卖还有0.3公里到达！请准备取餐！",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_004",
+        "trackId": "trk_dialogue",
+        "start": 5,
+        "end": 6,
+        "speaker": "陈曦",
+        "meta": "皱眉，打断播报",
+        "text": "我没点外卖。",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_005",
+        "trackId": "trk_dialogue",
+        "start": 5.5,
+        "end": 8,
+        "speaker": "AI骑手",
+        "meta": "无缝衔接，语气不变，更欢快了——完全不介意被打断",
+        "text": "确认订单——下单时间：2126年6月15日18:32。已配送72,318天。",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_006",
+        "trackId": "trk_dialogue",
+        "start": 7,
+        "end": 8.5,
+        "speaker": "AI骑手",
+        "meta": "播报语气流畅切换，带温馨提示腔",
+        "text": "餐品已保温199年11个月，建议在5分钟内趁热食用！",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_007",
+        "trackId": "trk_dialogue",
+        "start": 8,
+        "end": 9,
+        "speaker": "陈曦",
+        "meta": "看着机械臂递来的烂袋子，后退半步，困惑",
+        "text": "人都搬火星去了，你送给谁？",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_008",
+        "trackId": "trk_dialogue",
+        "start": 8.5,
+        "end": 10.5,
+        "speaker": "AI骑手",
+        "meta": "语气不变，依然欢快，完全不觉尴尬——最荒诞的一句",
+        "text": "检测到无人收货——自动切换配送模式。配送直到签收。美团AI骑手，永不掉线！",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_009",
+        "trackId": "trk_dialogue",
+        "start": 10.5,
+        "end": 12.5,
+        "speaker": "陈曦",
+        "meta": "转而看着AI屏幕，语气放缓，不是质问——像在确认一个事实",
+        "text": "喂，你知道现在是2326年吗？",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_010",
+        "trackId": "trk_dialogue",
+        "start": 12,
+        "end": 14,
+        "speaker": "AI骑手",
+        "meta": "立刻回应，机械音切换为联网提示音后恢复——轻快平淡如查天气",
+        "text": "联网校准中——校准完成。2326年。已更新时区，不影响配送时效。",
+        "source": "seedance.segment1"
+      },
+      {
+        "id": "clip_011",
+        "trackId": "trk_dialogue",
+        "start": 16,
+        "end": 18,
+        "speaker": "陈曦",
+        "meta": "语气放缓，看着屏幕，不是质问——更像感叹",
+        "text": "你送了两百年……",
+        "source": "seedance.segment2"
+      },
+      {
+        "id": "clip_012",
+        "trackId": "trk_dialogue",
+        "start": 18,
+        "end": 20,
+        "speaker": "AI骑手",
+        "meta": "屏幕闪亮，播报声不带情绪起伏，像在宣读",
+        "text": "使命：找到每一位顾客。",
+        "source": "seedance.segment2"
+      },
+      {
+        "id": "clip_013",
+        "trackId": "trk_dialogue",
+        "start": 22,
+        "end": 24,
+        "speaker": "陈曦",
+        "meta": "轻声，低头看袋子，几乎自言自语，嘴角微动",
+        "text": "……薯条挺脆。",
+        "source": "seedance.segment2"
+      },
+      {
+        "id": "clip_014",
+        "trackId": "trk_dialogue",
+        "start": 24,
+        "end": 25.5,
+        "speaker": "AI骑手",
+        "meta": "立刻播报，欢快的确认提示音，字正腔圆",
+        "text": "签收成功！感谢您的五星好评！祝您用餐愉快！",
+        "source": "seedance.segment2"
+      },
+      {
+        "id": "clip_015",
+        "trackId": "trk_dialogue",
+        "start": 25,
+        "end": 27,
+        "speaker": "AI骑手",
+        "meta": "转为热情推销语气，切到下一单",
+        "text": "下一单即将配送——奶茶两杯，少糖去冰——请问您认识这位顾客吗？",
+        "source": "seedance.segment2"
+      },
+      {
+        "id": "clip_016",
+        "trackId": "trk_dialogue",
+        "start": 27,
+        "end": 29,
+        "speaker": "AI骑手",
+        "meta": "远处回荡，声音越来越远，被废墟风吞没，渐弱到只剩回声",
+        "text": "美团AI——使命必达——",
+        "source": "seedance.segment2"
+      },
+      {
+        "id": "clip_017",
+        "trackId": "trk_narration",
+        "start": 28.5,
+        "end": 30,
+        "speaker": "陈曦",
+        "meta": "旁白，轻声，像在跟自己说话，平静",
+        "text": "……2326年。地球。挺好。",
+        "source": "seedance.segment2"
+      }
+    ]
+  },
+  "density": {
+    "cpsThreshold": 12,
+    "warnings": [
+      {
+        "clipId": "clip_008",
+        "trackType": "dialogue",
+        "speaker": "AI骑手",
+        "start": 8.5,
+        "end": 10.5,
+        "duration": 2,
+        "chars": 37,
+        "cps": 18.5,
+        "threshold": 12,
+        "text": "检测到无人收货——自动切换配送模式。配送直到签收。美团AI骑手，永不掉线！",
+        "reason": "文本密度过高：37 字符 / 2.00s = 18.50 cps > 12"
+      },
+      {
+        "clipId": "clip_006",
+        "trackType": "dialogue",
+        "speaker": "AI骑手",
+        "start": 7,
+        "end": 8.5,
+        "duration": 1.5,
+        "chars": 26,
+        "cps": 17.333333333333332,
+        "threshold": 12,
+        "text": "餐品已保温199年11个月，建议在5分钟内趁热食用！",
+        "reason": "文本密度过高：26 字符 / 1.50s = 17.33 cps > 12"
+      },
+      {
+        "clipId": "clip_010",
+        "trackType": "dialogue",
+        "speaker": "AI骑手",
+        "start": 12,
+        "end": 14,
+        "duration": 2,
+        "chars": 32,
+        "cps": 16,
+        "threshold": 12,
+        "text": "联网校准中——校准完成。2326年。已更新时区，不影响配送时效。",
+        "reason": "文本密度过高：32 字符 / 2.00s = 16.00 cps > 12"
+      },
+      {
+        "clipId": "clip_015",
+        "trackType": "dialogue",
+        "speaker": "AI骑手",
+        "start": 25,
+        "end": 27,
+        "duration": 2,
+        "chars": 31,
+        "cps": 15.5,
+        "threshold": 12,
+        "text": "下一单即将配送——奶茶两杯，少糖去冰——请问您认识这位顾客吗？",
+        "reason": "文本密度过高：31 字符 / 2.00s = 15.50 cps > 12"
+      },
+      {
+        "clipId": "clip_005",
+        "trackType": "dialogue",
+        "speaker": "AI骑手",
+        "start": 5.5,
+        "end": 8,
+        "duration": 2.5,
+        "chars": 38,
+        "cps": 15.2,
+        "threshold": 12,
+        "text": "确认订单——下单时间：2126年6月15日18:32。已配送72,318天。",
+        "reason": "文本密度过高：38 字符 / 2.50s = 15.20 cps > 12"
+      },
+      {
+        "clipId": "clip_014",
+        "trackType": "dialogue",
+        "speaker": "AI骑手",
+        "start": 24,
+        "end": 25.5,
+        "duration": 1.5,
+        "chars": 21,
+        "cps": 14,
+        "threshold": 12,
+        "text": "签收成功！感谢您的五星好评！祝您用餐愉快！",
+        "reason": "文本密度过高：21 字符 / 1.50s = 14.00 cps > 12"
+      },
+      {
+        "clipId": "clip_007",
+        "trackType": "dialogue",
+        "speaker": "陈曦",
+        "start": 8,
+        "end": 9,
+        "duration": 1,
+        "chars": 13,
+        "cps": 13,
+        "threshold": 12,
+        "text": "人都搬火星去了，你送给谁？",
+        "reason": "文本密度过高：13 字符 / 1.00s = 13.00 cps > 12"
+      }
+    ]
+  }
+}

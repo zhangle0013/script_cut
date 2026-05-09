@@ -1,0 +1,746 @@
+/**
+ * MVP 样式：追求“清晰可用”，不追求花哨。
+ * 你后续要做产品级 UI，可以换成 Tailwind / Radix / shadcn 等体系。
+ */
+
+:root {
+  --bg: #0b0d12;
+  --panel: #111526;
+  --panel-2: #0f1422;
+  --text: #e8ecff;
+  --muted: #a7b0d6;
+  --line: rgba(255, 255, 255, 0.08);
+  --accent: #6aa6ff;
+  --danger: #ff4d4d;
+  --warn: #ffbf3d;
+  --ok: #2de37d;
+
+  --radius: 12px;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans",
+    "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 600px at 20% 0%, rgba(106, 166, 255, 0.12), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, rgba(45, 227, 125, 0.06), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  /* 关键：禁止整页横向滚动；横向滚动只发生在时间线容器内 */
+  overflow-x: hidden;
+}
+
+/**
+ * 全宽铺满浏览器：不再 max-width 居中，避免宽屏左右大块留白；
+ * 垂直方向占满视口，时间线区域 flex 吃掉中间全部剩余宽度。
+ */
+.container {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  height: 100vh;
+  height: 100dvh; /* 移动端浏览器动态视口更准 */
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.appShell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title h1 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: 0.2px;
+}
+
+.title .hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/**
+ * 左侧「步骤流程」卡片标题：与普通 cardTitle 区分，带步骤感
+ */
+.workflowStepTitle {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.workflowMuted {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.langRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.langRow label {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.langBtn {
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.langBtn:hover {
+  color: var(--text);
+  border-color: rgba(106, 166, 255, 0.35);
+}
+
+.langBtnActive {
+  color: var(--text);
+  border-color: rgba(106, 166, 255, 0.65);
+  background: rgba(106, 166, 255, 0.12);
+}
+
+/**
+ * 帮助模式开关 + 分散式说明条（贴在各功能块下方）
+ */
+.helpToggleRow {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.helpToggleLabel {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.helpToggleLabel input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+
+.helpToggleStrong {
+  font-weight: 650;
+}
+
+.featureHelp {
+  margin-top: 10px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.55;
+  color: rgba(186, 198, 235, 0.92);
+  background: rgba(106, 166, 255, 0.08);
+  border-left: 3px solid rgba(106, 166, 255, 0.55);
+  border-radius: 0 8px 8px 0;
+}
+
+/* 时间轴列顶部的帮助条：不随横向滚动拉宽，只占视口列宽 */
+.timelineWrap > .featureHelp {
+  flex: 0 0 auto;
+  margin-top: 0;
+  margin-bottom: 0;
+  box-sizing: border-box;
+  max-width: 100%;
+}
+
+.panel {
+  margin-top: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 60%), var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: clip;
+}
+
+.panelHeader {
+  padding: 12px 12px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.workArea {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* 侧栏有上限，中间 1fr 占满剩余宽度，宽屏不再两侧留白 */
+  grid-template-columns: minmax(260px, 300px) minmax(0, 1fr) minmax(280px, 360px);
+  gap: 10px;
+}
+
+.timelineWrap {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* 关键：中间栏允许内容收缩，否则会把横向滚动“泄漏”到整页 */
+  min-width: 0;
+}
+
+/* 时间线/空状态占满中间列垂直空间，避免底部大块空 */
+.timelineWrap > .timeline,
+.timelineWrap > .panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.leftBar {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 60%), rgba(0, 0, 0, 0.18);
+}
+
+.leftBarInner {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rightBar {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 60%), rgba(0, 0, 0, 0.18);
+}
+
+.rightBarInner {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.btnPrimary {
+  border-color: rgba(106, 166, 255, 0.45);
+  background: rgba(106, 166, 255, 0.14);
+}
+
+.btnDanger {
+  border-color: rgba(255, 77, 77, 0.4);
+  background: rgba(255, 77, 77, 0.1);
+}
+
+.input {
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.content {
+  padding: 12px;
+}
+
+/* timeline */
+.timeline {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 55%), var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: auto;
+}
+
+.timelineInner {
+  position: relative;
+  min-height: 100%;
+}
+
+.timelineUnderlay {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.workAreaShade {
+  position: absolute;
+  top: 28px;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.workAreaActive {
+  position: absolute;
+  top: 28px;
+  bottom: 0;
+  box-sizing: border-box;
+  border-left: 1px dashed rgba(106, 166, 255, 0.45);
+  border-right: 1px dashed rgba(106, 166, 255, 0.45);
+  background: rgba(106, 166, 255, 0.06);
+}
+
+.playheadLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(255, 77, 120, 0.95);
+  box-shadow: 0 0 10px rgba(255, 77, 120, 0.35);
+  z-index: 8;
+  pointer-events: none;
+}
+
+/**
+ * 动作/节拍轨与音效轨之间的分组线：用暖色/冷色对比，比纯白分割线更易区分上下区域
+ */
+.trackSoundDivider {
+  width: 100%;
+  height: 6px;
+  flex-shrink: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 120, 72, 0.38) 0%,
+    rgba(120, 86, 255, 0.22) 55%,
+    rgba(45, 227, 125, 0.12) 100%
+  );
+  border-top: 1px solid rgba(255, 140, 90, 0.65);
+  border-bottom: 1px solid rgba(106, 166, 255, 0.45);
+  box-sizing: border-box;
+}
+
+.trackLaneDimmed {
+  opacity: 0.32;
+}
+
+.trackLabelBtns {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: 6px;
+}
+
+.trackFlagBtn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--muted);
+  border-radius: 4px;
+  width: 22px;
+  height: 20px;
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.trackFlagBtn:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.trackFlagBtn.active {
+  border-color: rgba(106, 166, 255, 0.55);
+  color: var(--text);
+  background: rgba(106, 166, 255, 0.15);
+}
+
+.trackLabelText {
+  flex: 1;
+  min-width: 0;
+}
+
+.rollJunction {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 10px;
+  height: min(120px, calc(100% - 8px));
+  min-height: 28px;
+  border-radius: 4px;
+  background: rgba(255, 191, 61, 0.35);
+  border: 1px solid rgba(255, 191, 61, 0.65);
+  z-index: 7;
+  cursor: ew-resize;
+  box-sizing: border-box;
+}
+
+.rollJunction:hover {
+  background: rgba(255, 191, 61, 0.55);
+}
+
+/**
+ * 轨高拖动条：放在轨道内容列底部，全宽易点，层级高于 lane 内 clip
+ */
+.trackResizeHandle {
+  flex-shrink: 0;
+  height: 8px;
+  margin: 0;
+  cursor: ns-resize;
+  background: rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  z-index: 10;
+  box-sizing: border-box;
+}
+
+.trackResizeHandle:hover {
+  background: rgba(106, 166, 255, 0.22);
+}
+
+.marqueeRect {
+  border: 1px solid rgba(106, 166, 255, 0.85);
+  background: rgba(106, 166, 255, 0.12);
+  box-sizing: border-box;
+}
+
+.timelineToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.timelineToolbar .mono {
+  font-size: 13px;
+  min-width: 88px;
+}
+
+.toolbarBtn {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.toolbarBtn:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.toolbarBtnPrimary {
+  border-color: rgba(106, 166, 255, 0.45);
+  background: rgba(106, 166, 255, 0.14);
+}
+
+/* 空白间隙拖选高亮（诸轨无片段占用时可 Delete 删掉） */
+.gapSelectionBand {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  background: rgba(106, 166, 255, 0.14);
+  border-left: 1px solid rgba(106, 166, 255, 0.55);
+  border-right: 1px solid rgba(106, 166, 255, 0.55);
+  pointer-events: none;
+}
+
+.ruler {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(11, 13, 18, 0.85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+  height: 34px;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+.rulerTicks {
+  position: relative;
+  height: 34px;
+}
+
+.tick {
+  position: absolute;
+  top: 0;
+  height: 34px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 10px;
+  padding-left: 6px;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.cutLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+/** 单条轨道：左侧标签 + 右侧 lane 列（flex），解决绝对定位导致轨高与 clip 脱节 */
+.track.trackRow {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  min-height: 52px;
+}
+
+.trackLabel {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  flex: 0 0 140px;
+  width: 140px;
+  min-height: 52px;
+  height: auto;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  box-sizing: border-box;
+  background: rgba(11, 13, 18, 0.88);
+  border-right: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/** 时间线内容列：lane + 底部分隔条式拖动柄 */
+.trackLaneColumn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.trackLane {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 52px;
+}
+
+.clipStruct {
+  padding: 0 9px 2px 9px;
+  font-size: 9px;
+  line-height: 1.35;
+  color: rgba(45, 227, 125, 0.85);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.clip {
+  position: absolute;
+  /* top / height 由内联样式控制（支持同轨重叠时分层排布） */
+  min-height: 24px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(106, 166, 255, 0.14);
+  box-sizing: border-box;
+  cursor: grab;
+  user-select: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+/** 可滚动正文区：滚动条不占用右侧手柄宽度；order 与 .handle 配合排成 左柄 | 正文 | 右柄 */
+.clipBody {
+  order: 1;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.clip:active {
+  cursor: grabbing;
+}
+
+.clip.visual {
+  background: rgba(45, 227, 125, 0.12);
+  border-color: rgba(45, 227, 125, 0.25);
+}
+
+.clip.narration {
+  background: rgba(255, 191, 61, 0.12);
+  border-color: rgba(255, 191, 61, 0.28);
+}
+
+.clip.danger {
+  border-color: rgba(255, 77, 77, 0.75);
+  box-shadow: 0 0 0 1px rgba(255, 77, 77, 0.35) inset;
+}
+
+.clipTitle {
+  padding: 6px 9px 0 9px;
+  font-size: 11px;
+  line-height: 1.35;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  flex-shrink: 0;
+}
+
+.clipSub {
+  padding: 2px 9px 4px 9px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.7);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  flex: 1;
+  min-height: 0;
+}
+
+.handle {
+  flex: 0 0 10px;
+  align-self: stretch;
+  position: relative;
+  min-height: 100%;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: ew-resize;
+  z-index: 2;
+}
+.handle.left {
+  order: 0;
+  border-radius: 10px 0 0 10px;
+}
+.handle.right {
+  order: 2;
+  border-radius: 0 10px 10px 0;
+}
+
+.sidebar {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.cardTitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 6px 10px;
+  font-size: 12px;
+}
+.kv .k {
+  color: rgba(255, 255, 255, 0.65);
+}
+.kv .v {
+  font-family: var(--mono);
+  color: rgba(255, 255, 255, 0.85);
+  word-break: break-word;
+}
+
+/** 检查器内下拉与多行文本：与暗色主题统一 */
+.inspectorSelect,
+.inspectorTextarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+}
+
+.inspectorTextarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.45;
+}
+

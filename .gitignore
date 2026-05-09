@@ -1,0 +1,21 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.local
+
+# 日志与环境
+.env
+.env.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Cursor（个人会话/缓存，一般不入库；若团队要共享规则可删掉下面两行）
+.cursor/

@@ -1,0 +1,28 @@
+{
+  "name": "script-cut",
+  "version": "0.1.0",
+  "private": true,
+  "description": "文字剧本剪辑（时间轴/ cut / 结构化块）MVP CLI",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "parse": "tsx src/cli.ts parse",
+    "dev:parse": "tsx src/cli.ts parse \"/Users/wanghuijuan/chenxi_project/prompts/20260509_陈曦_Seedance_你外卖到了_宽屏分镜_v1.md\" --out out.json --report report.md",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.3"
+  }
+}
