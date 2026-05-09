@@ -75,3 +75,25 @@ export function downloadText(filename: string, content: string, mime = "applicat
   URL.revokeObjectURL(url);
 }
 
+/**
+ * 导出 JSON 时的下载文件名：`{源文件名去扩展名}_edited.json`
+ *
+ * - `inputPath` 来自工程字段（如 CLI 的 md 路径、或 AI 的 `ai://generated`）
+ * - 取路径最后一段、去掉扩展名；非法文件名字符替换为 `_`
+ * - 无法得到有效 stem 时 fallback 为 `project_edited.json`
+ */
+export function editedExportFilename(inputPath: string): string {
+  const raw = (inputPath ?? "").trim();
+  let stem = "project";
+  if (raw.length > 0) {
+    const normalized = raw.replace(/\\/g, "/");
+    const lastSeg = normalized.split("/").pop() ?? "";
+    const noFrag = lastSeg.split("?")[0]?.split("#")[0] ?? lastSeg;
+    const dot = noFrag.lastIndexOf(".");
+    const base = dot > 0 ? noFrag.slice(0, dot) : noFrag;
+    const cleaned = base.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").trim();
+    if (cleaned.length > 0) stem = cleaned.slice(0, 120);
+  }
+  return `${stem}_edited.json`;
+}
+

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { Clip, Cut, ScriptCutProject, Track, TrackType, VisualSegment } from "./types.js";
+import { buildCanonicalTracks } from "./canonicalTracks.js";
+import { Clip, Cut, ScriptCutProject, TrackType, VisualSegment } from "./types.js";
 import { parseRangeToSeconds, parseTimeToSeconds } from "./timecode.js";
 
 /**
@@ -87,16 +88,9 @@ function partitionShotDescriptionLines(lines: string[]): {
   return { visualLines, actionBodies };
 }
 
-function ensureTracks(): Track[] {
-  return [
-    { id: "trk_visual", type: "visual", name: "画面段落" },
-    { id: "trk_dialogue", type: "dialogue", name: "对白" },
-    { id: "trk_narration", type: "narration", name: "旁白" },
-    { id: "trk_action", type: "action", name: "动作/节拍" },
-    { id: "trk_sfx", type: "sfx", name: "音效" },
-    { id: "trk_info", type: "info", name: "信息/参考" },
-    { id: "trk_subtitle", type: "subtitle", name: "字幕" }
-  ];
+/** 与 `canonicalTracks.buildCanonicalTracks` 一致，保证 `Record<TrackType, string>` 键齐全 */
+function ensureTracks() {
+  return buildCanonicalTracks();
 }
 
 /**

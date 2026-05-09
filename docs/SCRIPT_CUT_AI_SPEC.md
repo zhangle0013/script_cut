@@ -40,7 +40,7 @@
 | `tracks` | array | 是 | 轨道定义 |
 | `cuts` | array | 是 | 切点时间集合 |
 | `visualSegments` | array | 是 | 画面段落（镜头段落） |
-| `clips` | array | 是 | 对白/旁白/动作/音效等时间片段 |
+| `clips` | array | 是 | 对白/旁白/动作/音效/环境/信息等时间片段 |
 
 ---
 
@@ -62,6 +62,7 @@
 - `action`：动作/节拍（可选）
 - `sfx`：音效 / 环境声 / 拟音（可选，与对白分离）
 - `info`：说明/提示词/参考（可选，通常不占口播时长）
+- `environment`：场景信息（地点、时段、空间、氛围等，可选；时间轴上位于 `info` 与画面轨之间）
 - `subtitle`：字幕（可选）
 
 **最低配置（必须包含）：**
@@ -72,7 +73,7 @@
 
 **完整工程推荐（含音效，与 ScriptCut 默认解析器一致）：**
 
-- 在上述三条之外，可声明 `trk_action`、`trk_sfx`、`trk_info`、`trk_subtitle`，`id` 建议分别为 `trk_action`、`trk_sfx`、`trk_info`、`trk_subtitle`。
+- 在上述三条之外，可声明 `trk_environment`、`trk_action`、`trk_sfx`、`trk_info`、`trk_subtitle`（`id` 建议与类型前缀一致，如 `trk_environment`）。
 
 ---
 
@@ -200,7 +201,7 @@
 
 ---
 
-## 六、`clips[]`（对白 / 旁白 / 动作等）
+## 六、`clips[]`（对白 / 旁白 / 动作 / 环境等）
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -217,6 +218,7 @@
 
 - 对白/旁白可重叠（抢话、打断）；若输出「排队版」则同一 `trackId` 内应避免重叠
 - `trackId` 与 `type` 一致：旁白内容建议走 `trk_narration`，对白走 `trk_dialogue`
+- 场景/时空/氛围（地点、日夜、气候、空间关系等）建议走 **`trk_environment`** 的 `clips`，与 `trk_info`（策略/参考）及画面 `description`（本镜可见内容）区分
 
 ---
 
@@ -453,4 +455,4 @@ AI 应为动作块标 `intensity`，并取区间中值作为默认时长。
 
 ---
 
-*文档版本：`TrackType` 含 `sfx`（音效轨）；`VisualSegment` 已包含 `framingStart` / `framingEnd` / `cameraMove` / `moveAmplitude` / `moveDurationHint`（见 `src/types.ts`、`src/filmVocabulary.ts`）；枚举与 `film-production` 技能包术语对齐。*
+*文档版本：`TrackType` 含 `sfx`（音效轨）、`environment`（环境/场景轨，UI 顺序在 `info` 与 `visual` 之间）；`VisualSegment` 已包含 `framingStart` / `framingEnd` / `cameraMove` / `moveAmplitude` / `moveDurationHint`（见 `src/types.ts`、`src/filmVocabulary.ts`）；枚举与 `film-production` 技能包术语对齐。*

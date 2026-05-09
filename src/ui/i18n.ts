@@ -44,7 +44,7 @@ const messagesZh = {
 
   // —— 快捷说明 ——
   shortcutsHint:
-    "空格：播放/暂停。i / o：工作区入点/出点。↑ / ↓：按时间顺序切换选中片段。← / →：平移选中片段（Shift 大步）。Delete / Backspace：单选时删除该片段。Ctrl/Cmd+C/V/D：复制/粘贴/重复。Ctrl/Cmd+Z / Shift+Ctrl+Z：撤销/重做。Ctrl/Cmd+点击多选；Alt 或 Shift + 空白拖框选。点击标尺跳转播放头。波纹：左右细条+Ctrl/⌘。空白横向拖选「全轨无片段」间隙后 Delete 左移补位。",
+    "空格：播放/暂停。i / o：工作区入点/出点。↑ / ↓：按时间顺序切换选中片段。← / →：平移选中片段（Shift 大步）。Delete / Backspace：单选时删除该片段。Ctrl/Cmd+C/V/D：复制/粘贴/重复。Ctrl/Cmd+Z / Shift+Ctrl+Z：撤销/重做。Ctrl/Cmd+点击多选；Alt 或 Shift + 空白拖框选。点击标尺跳转播放头。波纹：左右细条+Ctrl/⌘。空白处单击或横向拖选「全轨无片段」间隙后 Delete 左移补位。",
 
   importFailed: "导入失败",
 
@@ -89,9 +89,9 @@ const messagesZh = {
     "选中片段后可用键盘 ← → 微调位置（Shift 为大步）",
   emptyRipple: "左右细条：按住 Ctrl 或 ⌘（Mac）拖拽可波纹编辑，全轨道在原出点之后的片段会整体平移。",
   emptyGapDelete:
-    "无刻度空白处：横向拖选一段「所有轨都没有片段」的间隙，按 Delete / Backspace 删除间隙（后续整体左移），Esc 取消。框选：Alt 或 Shift + 在空白处拖动。",
+    "无刻度空白：单击任意轨下方的空白（此处所有轨都无片段）即可选中整条空隙并高亮；Delete / Backspace 波纹左移后续内容，Esc 取消。也可横向拖动拖出一小段空隙再选中。框选片段：Alt 或 Shift + 空白拖动。",
   emptyVisualHint:
-    "画面轨绿色条：上行可为景别/运镜代码摘要，下行为画面描述摘要。",
+    "画面轨绿色条：上行可为景别/运镜代码摘要，下行为画面描述摘要。结构化 code 不合法时会红框提示（悬停看原因）。",
 
   // —— 右侧检查器 ——
   inspectorProject: "工程信息",
@@ -140,6 +140,7 @@ const messagesZh = {
   trackNarration: "旁白",
   trackAction: "动作/节拍",
   trackInfo: "信息/参考",
+  trackEnvironment: "环境/场景",
   trackSubtitle: "字幕",
   trackSfx: "音效",
 
@@ -164,8 +165,18 @@ const messagesZh = {
   // —— 时间轴刻度与提示 ——
   timelineTick: "{{sec}} 秒",
   tooltipCpsWarn: "语速 {{cps}} 字/秒，超过上限 {{max}}",
+  /** 画面段结构化字段异常（与对白语速标红同一套 danger 样式） */
+  visualStructInvalidFramingStart: "framingStart 不是规范景别 code（见 filmVocabulary）",
+  visualStructInvalidFramingEnd: "framingEnd 不是规范景别 code",
+  visualStructInvalidCameraMove: "cameraMove 不是规范运镜 code",
+  visualStructInvalidMoveAmplitude: "moveAmplitude 须为 S / M / L",
+  visualStructFramingOneSided: "景别只填了起点或终点一端，建议成对填写 framingStart / framingEnd",
+  visualStructMoveHintInvalid: "moveDurationHint 须为正数（秒）",
   /** 片段角标：每秒字符数 */
   clipCpsLabel: "语速",
+  /** 片段标题旁：仅 UI 展示时长（数据仍为 start/end）；tooltip 显示完整范围 */
+  clipDurationDisplay: "{{sec}}秒",
+  clipDurationTooltip: "范围 {{start}}–{{end}}",
 
   // —— 帮助模式（分散在各功能旁的简短说明，无整页文档浮层） ——
   helpModeToggle: "帮助模式",
@@ -173,9 +184,11 @@ const messagesZh = {
   /** 顶栏：语言与开关 */
   helpHintSettings:
     "切换界面语言。帮助模式只增加提示文字，不会改动工程数据。排查问题可在地址栏加 ?debug=1 后刷新，打开控制台查看 [ScriptCut] 日志（详见代码 debugLog）。",
-  helpHintImportExport: "导入 CLI 或 AI 生成的 JSON 工程；导出可下载当前时间轴编辑结果；清空会关闭工程并清空选中。",
+  helpHintImportExport:
+    "导入 CLI 或 AI 生成的 JSON 工程；导出可下载当前时间轴编辑结果，文件名一般为「工程 inputPath 去扩展名 + _edited.json」；清空会关闭工程并清空选中。",
   helpHintImportError: "请对照报错修改 JSON；结构说明见项目内 docs/SCRIPT_CUT_AI_SPEC.md。",
-  helpHintViewSnap: "缩放决定时间轴疏密；吸附让拖动/拉伸更易对齐切镜点；语速上限用于给对白、旁白标红提示（可能念太快）。",
+  helpHintViewSnap:
+    "缩放决定时间轴疏密；吸附让拖动/拉伸更易对齐切镜点；语速上限用于给对白、旁白标红提示（可能念太快）。画面轨若景别/运镜/幅度等结构化字段不合法或与规范不一致，也会红框提示（悬停可看原因）。",
   helpHintTrackVisibility: "若某轨被 H 隐藏，时间轴上不再显示该轨；在此勾选可恢复，无需在时间轴上点到隐藏轨的按钮。",
   helpHintTidyLocked: "导入工程后可：消除口播重叠并整体顺延时间线，或按口播节奏自动切镜并重算画面段。",
   helpHintTidySpeech: "处理同轨片段重叠；从冲突点起可连带画面段与后续内容右移，减少声画错位。",
@@ -185,7 +198,7 @@ const messagesZh = {
   helpHintEmptyCenter: "此处为导入前说明；导入后同一位置变为可横向滚动的时间轴。",
   /** 时间轴区域（有工程时显示在轴上方） */
   helpHintTimeline:
-    "竖线为切镜点；点击标尺跳转播放头（标尺不可选中文字）。空格播放/暂停：设好入点 I 与出点 O 后在该区间内循环，否则播到片尾停止。↑ / ↓ 按时间顺序切换选中片段；单选时 Delete 可删该片段（与删间隙不冲突：选中间隙时优先删间隙）。拖中间平移，拖两侧细条改入点/出点；按住 Ctrl 或 ⌘（Mac）拖细条为全轨道波纹编辑。Ctrl/Cmd 点片段多选；Alt 或 Shift + 空白拖为框选（滑出时间线外仍有效）。同轨相邻片段接缝处可拖动黄色接点做 roll。L/S/H：轨锁定/独奏显示/隐藏；隐藏轨可在左侧「轨道显示」里勾回。同轨上若片段在时间上重叠，会自动分成上下多行显示，便于同时看清边界与文字。轨道底边可拖高；片段内文字会换行并自动估算最小轨高。在无刻度空白处横向拖选「全轨无片段」间隙可 Delete 左移补位。滚轮横滑；Shift+滚轮纵滚。对白/旁白标红为语速提示。",
+    "竖线为切镜点；点击标尺跳转播放头（标尺不可选中文字）。空格播放/暂停：设好入点 I 与出点 O 后在该区间内循环，否则播到片尾停止。↑ / ↓ 按时间顺序切换选中片段；单选时 Delete 可删该片段（与删间隙不冲突：选中间隙时优先删间隙）。拖中间平移，拖两侧细条改入点/出点；按住 Ctrl 或 ⌘（Mac）拖细条为全轨道波纹编辑。Ctrl/Cmd 点片段多选；Alt 或 Shift + 空白拖为框选（滑出时间线外仍有效）。同轨相邻片段接缝处可拖动黄色接点做 roll。L/S/H：轨锁定/独奏显示/隐藏；隐藏轨可在左侧「轨道显示」里勾回。同轨上若片段在时间上重叠，会自动分成上下多行显示，便于同时看清边界与文字。轨道底边可拖高；片段内文字会换行并自动估算最小轨高。无刻度空白：单击选中整条全局间隙（或横向拖选），Delete 左移补位。滚轮横滑；Shift+滚轮纵滚。对白/旁白标红为语速提示。",
   /** 时间轴片段左右手柄的悬停说明 */
   timelineHandleRipple: "拖动：修剪入点/出点。按住 Ctrl 或 ⌘（Mac）拖动：全轨道波纹编辑（原出点之后的片段整体平移）。",
   /** 右侧检查器 */
@@ -194,7 +207,8 @@ const messagesZh = {
   helpHintInspectorClip: "核对类型、轨道、时间与文本摘要；画面段与口播段展示字段不同。",
   helpHintInspectorSegment: "景别、运镜等为 JSON 结构化字段；括号内为中文释义（来自内置词典）。",
   helpHintInspectorSegmentEdit: "画面段落可在下方用下拉修改结构化字段（会写入工程，可撤销）；画面描述可在此编辑长文本。",
-  helpHintInspectorSpeech: "按字数估算最短口播；可一键延长片段，或按标点拆分（可选对齐切镜点）。",
+  helpHintInspectorSpeech:
+    "按字数估算最短口播；「一键延长」拉长当前对白/旁白末端后，会把整条时间线上「起点 ≥ 原出点」的所有 clips、画面段一并右移（全局 ripple），并重建 cuts，便于保持声画对齐。可按标点拆分（可选对齐切镜点）。",
 } as const;
 
 /** 英文文案（与中文键一致） */
@@ -218,7 +232,7 @@ const messagesEn: Record<MessageKey, string> = {
   clearProject: "Clear",
 
   shortcutsHint:
-    "Space: play/pause. i / o: work area In/Out. ↑ / ↓: move selection along time order. ← / →: nudge selection (Shift: larger). Delete/Backspace: delete one selected item. Ctrl/Cmd+C/V/D: copy/paste/duplicate. Ctrl/Cmd+Z / Shift+Ctrl+Z: undo/redo. Ctrl/Cmd+click multi-select; Alt or Shift + drag marquee on empty space. Click ruler to seek. Side handles + Ctrl/⌘: ripple. Drag a globally empty gap, Delete ripples left.",
+    "Space: play/pause. i / o: work area In/Out. ↑ / ↓: move selection along time order. ← / →: nudge selection (Shift: larger). Delete/Backspace: delete one selected item. Ctrl/Cmd+C/V/D: copy/paste/duplicate. Ctrl/Cmd+Z / Shift+Ctrl+Z: undo/redo. Ctrl/Cmd+click multi-select; Alt or Shift + drag marquee on empty space. Click ruler to seek. Side handles + Ctrl/⌘: ripple. Click empty lane or drag to select a globally empty gap; Delete ripples left.",
 
   importFailed: "Import failed",
 
@@ -257,9 +271,9 @@ const messagesEn: Record<MessageKey, string> = {
   emptyKeys: "Select a clip, then ← → to nudge (Shift: larger step)",
   emptyRipple: "Side handles: hold Ctrl or ⌘ (Mac) while dragging to ripple all tracks—clips after the original out-point shift together.",
   emptyGapDelete:
-    "Empty timeline: drag on the lane background to select a gap with no clips on any track; Delete/Backspace closes the gap (ripple left). Esc clears. Marquee: Alt or Shift + drag on empty space.",
+    "Global gaps: click empty lane space where no track has a clip to select the full gap (highlighted band); Delete/Backspace ripple-left. Or drag horizontally on empty space to define a gap. Esc clears. Marquee clips: Alt or Shift + drag on empty space.",
   emptyVisualHint:
-    "Visual track: top line = framing/camera codes, bottom = description summary.",
+    "Visual track: top line = framing/camera codes, bottom = description summary. Invalid structured codes get a red outline (hover for why).",
 
   inspectorProject: "Project",
   inspectorSelected: "Selection",
@@ -306,6 +320,7 @@ const messagesEn: Record<MessageKey, string> = {
   trackNarration: "Narration",
   trackAction: "Action",
   trackInfo: "Info",
+  trackEnvironment: "Environment",
   trackSubtitle: "Subtitle",
   trackSfx: "SFX",
 
@@ -327,15 +342,25 @@ const messagesEn: Record<MessageKey, string> = {
 
   timelineTick: "{{sec}}s",
   tooltipCpsWarn: "Rate {{cps}} chars/s exceeds {{max}}",
+  visualStructInvalidFramingStart: "framingStart is not a valid framing code (see filmVocabulary)",
+  visualStructInvalidFramingEnd: "framingEnd is not a valid framing code",
+  visualStructInvalidCameraMove: "cameraMove is not a valid camera-move code",
+  visualStructInvalidMoveAmplitude: "moveAmplitude must be S, M, or L",
+  visualStructFramingOneSided: "Only one of framingStart / framingEnd is set; prefer both",
+  visualStructMoveHintInvalid: "moveDurationHint must be a positive number (seconds)",
   clipCpsLabel: "cps",
+  clipDurationDisplay: "{{sec}} s",
+  clipDurationTooltip: "{{start}}–{{end}}",
 
   helpModeToggle: "Help mode",
   helpModeToggleHint: "Shows short hints next to each control group. Turn off to hide them.",
   helpHintSettings:
     "Change UI language. Help mode only adds notes; it does not change project data. For troubleshooting, add ?debug=1 to the URL, reload, and watch the console for [ScriptCut] logs (see debugLog in code).",
-  helpHintImportExport: "Import JSON from the CLI or AI; export downloads your edited timeline; clear closes the project.",
+  helpHintImportExport:
+    "Import JSON from the CLI or AI; export downloads your edited timeline as `{input basename}_edited.json`; clear closes the project.",
   helpHintImportError: "Fix the JSON using the error text; see docs/SCRIPT_CUT_AI_SPEC.md for the schema.",
-  helpHintViewSnap: "Zoom changes timeline density; snap helps align to cuts; max chars/s highlights fast dialogue/narration.",
+  helpHintViewSnap:
+    "Zoom changes timeline density; snap helps align to cuts; max chars/s highlights fast dialogue/narration. Visual clips get a red outline when structured fields (framing / camera / amplitude / hints) fail validation—hover for details.",
   helpHintTrackVisibility: "If a track was hidden with H, it no longer appears on the timeline; re-enable it here.",
   helpHintTidyLocked: "After import: resolve speech overlaps with ripple, or auto-generate cuts and rebuild visual segments.",
   helpHintTidySpeech: "Fix same-track overlaps; optionally ripple visuals and everything after the conflict to the right.",
@@ -343,7 +368,7 @@ const messagesEn: Record<MessageKey, string> = {
   helpHintShortcuts: "With a clip selected, ← → nudge (Shift = larger step). Disabled while an input is focused.",
   helpHintEmptyCenter: "Placeholder before import; after import this area becomes the scrollable timeline.",
   helpHintTimeline:
-    "Cuts are vertical; click ruler to move playhead (ruler text is not selectable). Space plays: loops work area if In/Out set, else stops at end. ↑ / ↓ walk selection in time order; Delete removes one selected clip (gap selection still uses Delete to close gap). Drag clips; Ctrl/⌘+handles ripple. Ctrl/Cmd+click multi-select; Alt or Shift + drag marquee on empty space (works even if pointer leaves the timeline). Yellow junction: roll edit. L/S/H: lock/solo/hide; use Track visibility on the left to unhide. Overlapping clips on the same track stack into rows so both stay readable. Drag the bottom edge of a track to resize; text wraps and min height grows with content. Delete closes a globally empty gap (ripple left). Wheel pans horizontally; Shift+wheel vertical. Red = speech rate warning.",
+    "Cuts are vertical; click ruler to move playhead (ruler text is not selectable). Space plays: loops work area if In/Out set, else stops at end. ↑ / ↓ walk selection in time order; Delete removes one selected clip (gap selection still uses Delete to close gap). Drag clips; Ctrl/⌘+handles ripple. Ctrl/Cmd+click multi-select; Alt or Shift + drag marquee on empty space (works even if pointer leaves the timeline). Yellow junction: roll edit. L/S/H: lock/solo/hide; use Track visibility on the left to unhide. Overlapping clips on the same track stack into rows so both stay readable. Drag the bottom edge of a track to resize; text wraps and min height grows with content. Click empty lane or drag to select a globally empty gap; Delete ripple-left. Wheel pans horizontally; Shift+wheel vertical. Red = speech rate warning.",
   timelineHandleRipple: "Drag: trim in/out. Hold Ctrl or ⌘ (Mac) and drag: ripple all tracks (shift every clip that starts at or after the original out-point).",
   helpHintInspectorProject: "Read-only counts for segments, clips, cuts, plus the source file path.",
   helpHintInspectorSelect: "Click a clip on the timeline to see details and actions here.",
@@ -351,7 +376,8 @@ const messagesEn: Record<MessageKey, string> = {
   helpHintInspectorSegment: "Framing/camera codes come from JSON; parentheses show dictionary labels.",
   helpHintInspectorSegmentEdit:
     "For visual segments, edit structured fields with dropdowns (saved to project, undoable); use the text area for description.",
-  helpHintInspectorSpeech: "Estimated min duration; extend the clip or split on punctuation (optionally align to cuts).",
+  helpHintInspectorSpeech:
+    "Estimates min speech from text. “Extend to fit” lengthens this clip, then ripples every clip and visual segment that starts at or after the original out-point (full-timeline ripple) and rebuilds cuts. Split on punctuation optionally snaps to cuts.",
 };
 
 const STORAGE_KEY = "scriptcut-locale";
@@ -416,6 +442,8 @@ export function trackTypeLabel(type: TrackType, t: ReturnType<typeof createTrans
       return t("trackAction");
     case "info":
       return t("trackInfo");
+    case "environment":
+      return t("trackEnvironment");
     case "subtitle":
       return t("trackSubtitle");
     case "sfx":

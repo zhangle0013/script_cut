@@ -9,18 +9,21 @@ import React, {
   useState
 } from "react";
 import type { TrackType } from "../types.js";
+import type { MessageKey } from "./i18n.js";
 import { trackTypeLabel } from "./i18n.js";
 import { useI18n } from "./I18nProvider.js";
-import type { TimelineItem } from "./model.js";
+import type { TimelineItem, VisualStructIssue } from "./model.js";
 import { calcCps, fmtTime, snapToCuts } from "./utils.js";
 
 const TIME_EPS = 1e-6;
 /** 略减小阈值，短间隙也更容易选中（仍须全轨无片段） */
 const GAP_MIN_SEC = 0.03;
 const LABEL_W = 140;
-const RULER_H = 28;
+/** 与 `styles.css` 中 `.ruler` 的 height（34px）一致，供垂直布局与框选命中 */
+const RULER_H = 34;
 const DEFAULT_TRACK_H = 52;
-const SOUND_DIVIDER_H = 5;
+/** 与 `.trackSoundDivider` 的 `height`（border-box）一致，用于垂直布局与框选命中 */
+const SOUND_DIVIDER_H = 6;
 const MIN_TRACK_H = 36;
 /** 用户拖动上限；实际显示高度还会按片段文字量自动不低于估算值（见 effectiveTrackHeight） */
 const MAX_TRACK_H = 360;
@@ -34,6 +37,16 @@ const CLIP_VERTICAL_PAD = 20;
 const STACK_LANE_GAP_PX = 3;
 /** 分层区域上下内边距（px），与原先 clip 贴边留白一致 */
 const STACK_TRACK_PAD_PX = 4;
+
+/** 画面结构化自检问题码 → i18n 键（时间轴 tooltip） */
+const VISUAL_STRUCT_ISSUE_KEY: Record<VisualStructIssue, MessageKey> = {
+  invalidFramingStart: "visualStructInvalidFramingStart",
+  invalidFramingEnd: "visualStructInvalidFramingEnd",
+  invalidCameraMove: "visualStructInvalidCameraMove",
+  invalidMoveAmplitude: "visualStructInvalidMoveAmplitude",
+  framingOneSided: "visualStructFramingOneSided",
+  moveHintInvalid: "visualStructMoveHintInvalid"
+};
 
 function roundTime(x: number): number {
   return Math.round(x * 1000) / 1000;
@@ -135,11 +148,71 @@ function isRangeGloballyEmpty(items: TimelineItem[], lo: number, hi: number): bo
   return true;
 }
 
-/** 同轨相邻 clip 可 roll 的接点对（左 clip item id → 右 clip item id） */
+/** 将所有条目的时间段合并为互不重叠的区间（全局占用），用于找「点击处的整条空隙」 */
+function mergeAllItemIntervals(items: TimelineItem[]): [number, number][] {
+  const raw = items.map((it) => [it.start, it.end] as [number, number]);
+  raw.sort((a, b) => a[0] - b[0]);
+  const out: [number, number][] = [];
+  for (const [s, e] of raw) {
+    if (!out.length || s > out[out.length - 1][1] + TIME_EPS) {
+      out.push([s, e]);
+    } else {
+      out[out.length - 1][1] = Math.max(out[out.length - 1][1], e);
+    }
+  }
+  return out;
+}
+
+/** 横向拖动空隙判定「已从点击升级为拖拽」的位移阈值（像素²） */
+const GAP_CLICK_DRAG_THRESHOLD_SQ = 36;
+
+/**
+ * 点选空白：返回包含时刻 `t` 的最大全局空隙 [lo, hi]。
+ * - 空隙两侧由全局合并后的占用边界界定；最后一节后延伸至画布右侧（scrollWidth），便于删尾部留白。
+ */
+function globallyEmptyGapAtClick(items: TimelineItem[], t: number, canvasRightSec: number): { lo: number; hi: number } | null {
+  const merged = mergeAllItemIntervals(items);
+  /** 画布右缘对应的秒数，至少盖住当前已有内容 */
+  let hiCanvas = Math.max(canvasRightSec, 1);
+  for (const it of items) hiCanvas = Math.max(hiCanvas, it.end + 1);
+
+  const contains = (lo: number, hi: number): boolean =>
+    t >= lo - TIME_EPS * 4 && t <= hi + TIME_EPS * 4 && hi - lo >= GAP_MIN_SEC;
+
+  if (merged.length === 0) {
+    const lo = 0;
+    const hi = hiCanvas;
+    return contains(lo, hi) ? { lo, hi } : null;
+  }
+
+  {
+    const lo = 0;
+    const hi = merged[0][0];
+    if (contains(lo, hi)) return { lo, hi };
+  }
+
+  for (let i = 0; i < merged.length - 1; i++) {
+    const lo = merged[i][1];
+    const hi = merged[i + 1][0];
+    if (contains(lo, hi)) return { lo, hi };
+  }
+
+  {
+    const lo = merged[merged.length - 1][1];
+    const hi = hiCanvas;
+    if (contains(lo, hi)) return { lo, hi };
+  }
+
+  return null;
+}
+
+/**
+ * 同轨相邻条目可 roll 的接点对（保持两条总长不变，只移动接缝）。
+ * 含 clip 与画面段（visualSegment）；原先排除画面轨导致画面镜头缝无法 roll。
+ */
 function rollPairsByItemId(items: TimelineItem[]): { leftItemId: string; rightItemId: string; junction: number }[] {
   const byTrack = new Map<TrackType, TimelineItem[]>();
   for (const it of items) {
-    if (it.kind !== "clip") continue;
     const arr = byTrack.get(it.trackType) ?? [];
     arr.push(it);
     byTrack.set(it.trackType, arr);
@@ -286,12 +359,23 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
   const lastPlayheadTRef = useRef(playheadSec);
   const playingRef = useRef(playing);
   playingRef.current = playing;
+  /** 标尺拖动时 rAF 里调用，避免闭包拿到过期的 onPlayheadChange */
+  const onPlayheadChangeRef = useRef(onPlayheadChange);
+  onPlayheadChangeRef.current = onPlayheadChange;
   const itemsRef = useRef(items);
   itemsRef.current = items;
   const [drag, setDrag] = useState<DragState | null>(null);
   const [rollDrag, setRollDrag] = useState<RollDragState | null>(null);
 
-  const gapSessionRef = useRef<{ startT: number; pointerId: number; alt: boolean } | null>(null);
+  const gapSessionRef = useRef<{
+    startT: number;
+    startClientX: number;
+    startClientY: number;
+    pointerId: number;
+    alt: boolean;
+    /** true 表示指针移动已超过「点击」阈值，按横向拖选空隙处理 */
+    dragExceededClickThreshold: boolean;
+  } | null>(null);
   const [gapPreview, setGapPreview] = useState<{ lo: number; hi: number } | null>(null);
   const [gapSelect, setGapSelect] = useState<{ lo: number; hi: number } | null>(null);
 
@@ -338,11 +422,12 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
   const trackVerticalLayout = useMemo(() => {
     let y = RULER_H;
     const map = new Map<TrackType, { top: number; bottom: number }>();
-    let firstSound = true;
+    /** 粗分组线画在「对白」轨上方：布局上在首条可见对白之前预留一条带高度 */
+    let addedDialogueTopDivider = false;
     for (const tt of visibleTrackOrder) {
-      if (tt === "sfx" && firstSound) {
+      if (tt === "dialogue" && !addedDialogueTopDivider) {
         y += SOUND_DIVIDER_H;
-        firstSound = false;
+        addedDialogueTopDivider = true;
       }
       const h = displayTrackHeight(tt);
       map.set(tt, { top: y, bottom: y + h });
@@ -737,6 +822,8 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     const target = ev.target as HTMLElement;
     if (target.closest("[data-clip-id]") || target.closest("[data-roll-junction]")) return;
     if (target.closest(".ruler") || target.closest(".trackLabel")) return;
+    /** 轨高拖动条：不参与空隙点选/拖选 */
+    if (target.closest(".trackResizeHandle")) return;
 
     const host = ev.currentTarget as HTMLElement;
     const pid = ev.pointerId;
@@ -783,10 +870,21 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       return;
     }
 
-    /** 无修饰键：横向拖选「全轨无片段」的间隙；结束后 Delete 左移补位 */
+    /**
+     * 无修饰键：
+     * - **单击**（几乎未移动）：选中点击时刻所在的最大全局空隙（剪辑软件式「点空白→亮一块→Delete 波纹左移」）
+     * - **横向拖动**：沿用原有拖选空隙矩形逻辑
+     */
     const t0 = clientXToTime(ev.clientX);
-    gapSessionRef.current = { startT: t0, pointerId: pid, alt: false };
-    setGapPreview({ lo: t0, hi: t0 });
+    gapSessionRef.current = {
+      startT: t0,
+      startClientX: ev.clientX,
+      startClientY: ev.clientY,
+      pointerId: pid,
+      alt: false,
+      dragExceededClickThreshold: false
+    };
+    setGapPreview(null);
     setGapSelect(null);
     setSelection([]);
     setMarquee(null);
@@ -795,6 +893,12 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       if (e.pointerId !== pid) return;
       const sess = gapSessionRef.current;
       if (!sess) return;
+      const dx = e.clientX - sess.startClientX;
+      const dy = e.clientY - sess.startClientY;
+      if (!sess.dragExceededClickThreshold && dx * dx + dy * dy > GAP_CLICK_DRAG_THRESHOLD_SQ) {
+        sess.dragExceededClickThreshold = true;
+      }
+      if (!sess.dragExceededClickThreshold) return;
       const t1 = clientXToTime(e.clientX);
       const s = sess.startT;
       setGapPreview({ lo: Math.min(s, t1), hi: Math.max(s, t1) });
@@ -814,15 +918,28 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
         if (timelineInteractAbortRef.current === ac) timelineInteractAbortRef.current = null;
         return;
       }
-      const t1 = clientXToTime(e.clientX);
-      const lo = Math.min(sess.startT, t1);
-      const hi = Math.max(sess.startT, t1);
-      if (hi - lo < GAP_MIN_SEC) {
-        setGapSelect(null);
-      } else if (isRangeGloballyEmpty(itemsRef.current, lo, hi)) {
-        setGapSelect({ lo, hi });
+
+      if (!sess.dragExceededClickThreshold) {
+        /** 点选：扩展为整条全局空隙 */
+        const innerEl = innerRef.current;
+        const canvasRightSec = innerEl ? Math.max(0, (innerEl.scrollWidth - LABEL_W) / pxPerSecRef.current) : 120;
+        const g = globallyEmptyGapAtClick(itemsRef.current, sess.startT, canvasRightSec);
+        if (g && isRangeGloballyEmpty(itemsRef.current, g.lo, g.hi)) {
+          setGapSelect(g);
+        } else {
+          setGapSelect(null);
+        }
       } else {
-        setGapSelect(null);
+        const t1 = clientXToTime(e.clientX);
+        const lo = Math.min(sess.startT, t1);
+        const hi = Math.max(sess.startT, t1);
+        if (hi - lo < GAP_MIN_SEC) {
+          setGapSelect(null);
+        } else if (isRangeGloballyEmpty(itemsRef.current, lo, hi)) {
+          setGapSelect({ lo, hi });
+        } else {
+          setGapSelect(null);
+        }
       }
       ac.abort();
       if (timelineInteractAbortRef.current === ac) timelineInteractAbortRef.current = null;
@@ -846,13 +963,65 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     }
   };
 
+  /**
+   * 标尺：按下即可跳转，按住拖动连续 scrub。
+   * 拖动中主要改播放头 DOM + lastPlayheadTRef，onPlayheadChange 用 rAF 节流，减轻整表重绘卡顿。
+   */
   const onRulerPointerDown = (ev: React.PointerEvent) => {
     if (ev.button !== 0) return;
-    /** 避免标尺文字/区域被选中，否则影响连续拖动播放头 */
     ev.preventDefault();
     ev.stopPropagation();
-    const tt = clientXToTime(ev.clientX);
-    onPlayheadChange?.(roundTime(tt));
+    const host = ev.currentTarget as HTMLElement;
+    const pid = ev.pointerId;
+
+    const applyT = (clientX: number) => {
+      const t = roundTime(clientXToTime(clientX));
+      lastPlayheadTRef.current = t;
+      const lineEl = playheadLineRef.current;
+      if (lineEl) lineEl.style.left = `${LABEL_W + t * pxPerSecRef.current}px`;
+      return t;
+    };
+
+    applyT(ev.clientX);
+    let rafId = 0;
+    const flushToParent = () => {
+      rafId = 0;
+      onPlayheadChangeRef.current?.(lastPlayheadTRef.current);
+    };
+    const scheduleFlush = () => {
+      if (!rafId) rafId = requestAnimationFrame(flushToParent);
+    };
+    scheduleFlush();
+
+    const ac = new AbortController();
+    const sig = ac.signal;
+    try {
+      host.setPointerCapture(pid);
+    } catch {
+      /* 部分环境可能不支持 */
+    }
+
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerId !== pid) return;
+      applyT(e.clientX);
+      scheduleFlush();
+    };
+    const onEnd = (e: PointerEvent) => {
+      if (e.pointerId !== pid) return;
+      ac.abort();
+      try {
+        host.releasePointerCapture(pid);
+      } catch {
+        /* */
+      }
+      if (rafId) cancelAnimationFrame(rafId);
+      const tf = applyT(e.clientX);
+      onPlayheadChangeRef.current?.(tf);
+    };
+
+    window.addEventListener("pointermove", onMove, { signal: sig });
+    window.addEventListener("pointerup", onEnd, { signal: sig });
+    window.addEventListener("pointercancel", onEnd, { signal: sig });
   };
 
   const totalWidth = Math.max(900, maxT * pxPerSec + 180);
@@ -890,10 +1059,25 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       </>
     ) : null;
 
+  /**
+   * 点击标尺/片段/空白等（非 button/input）时把焦点收到时间线根节点，
+   * 以便 App 侧仅在「时间线区域获得焦点」时响应 Ctrl+A / macOS Cmd+A 全选。
+   */
+  const onTimelineMouseDownFocusRoot = (ev: React.MouseEvent<HTMLDivElement>) => {
+    if (ev.button !== 0) return;
+    const t = ev.target as HTMLElement | null;
+    if (!t) return;
+    if (t.closest("input, textarea, select, button, a[href], [contenteditable='true']")) return;
+    (ev.currentTarget as HTMLDivElement).focus({ preventScroll: true });
+  };
+
   return (
     <div
       className="timeline"
       ref={containerRef}
+      data-timeline-focus-root
+      tabIndex={-1}
+      onMouseDown={onTimelineMouseDownFocusRoot}
       onPointerDown={onTimelinePointerDown}
       onPointerCancel={onTimelinePointerCancel}
     >
@@ -955,8 +1139,9 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
         ))}
 
         {visibleTrackOrder.map((tt, idx) => {
-          /** 旁白与音效之间的分组线（音效轨已排到旁白下方） */
-          const showSoundDivider = tt === "sfx" && visibleTrackOrder.slice(0, idx).includes("narration");
+          /** 口播区顶部分组线：画在首条可见「对白」轨之前（对白与画面/动作等上方区域分界） */
+          const firstDialogueIdx = visibleTrackOrder.indexOf("dialogue");
+          const showSpeechBlockDivider = firstDialogueIdx >= 0 && idx === firstDialogueIdx;
           const laneItems = itemsByTrack.get(tt) ?? [];
           /** 显示高度：用户值、分层内容高度、上限三者取齐 */
           const th = displayTrackHeight(tt);
@@ -967,7 +1152,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
 
           return (
             <React.Fragment key={tt}>
-              {showSoundDivider ? <div className="trackSoundDivider" aria-hidden /> : null}
+              {showSpeechBlockDivider ? <div className="trackSoundDivider" aria-hidden /> : null}
               <div className="track trackRow" style={{ minHeight: th }}>
                 <div className="trackLabel" style={{ minHeight: th }}>
                   <div className="trackLabelBtns">
@@ -1045,19 +1230,43 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                       it.trackType === "dialogue" || it.trackType === "narration"
                         ? calcCps(it.rawText ?? "", it.start, it.end)
                         : 0;
-                    const isDanger =
+                    const speechDanger =
                       (it.trackType === "dialogue" || it.trackType === "narration") && cps > cpsThreshold;
+                    const visualStructIssues: VisualStructIssue[] =
+                      it.kind === "visualSegment" ? it.visualStructIssues ?? [] : [];
+                    const visualStructDanger = visualStructIssues.length > 0;
+                    const isDanger = speechDanger || visualStructDanger;
 
                     const isSelected = selectedIds.includes(it.id);
 
-                    const className = [
-                      "clip",
-                      tt === "visual" ? "visual" : "",
-                      tt === "narration" ? "narration" : "",
-                      isDanger ? "danger" : ""
-                    ]
-                      .filter(Boolean)
-                      .join(" ");
+                    const clipTitleTooltip = (() => {
+                      const lines: string[] = [
+                        it.title,
+                        `${fmtTime(it.start)} - ${fmtTime(it.end)}`,
+                        it.subtitle ?? ""
+                      ].filter((x) => x.length > 0);
+                      if (speechDanger) {
+                        lines.push(`⚠ ${t("tooltipCpsWarn", { cps: cps.toFixed(2), max: cpsThreshold })}`);
+                      }
+                      for (const code of visualStructIssues) {
+                        lines.push(`⚠ ${t(VISUAL_STRUCT_ISSUE_KEY[code])}`);
+                      }
+                      return lines.join("\n");
+                    })();
+
+                    /** 各轨 clip 用独立色调区分（与 .clip.visual / .narration 等样式对应） */
+                    const toneClass =
+                      tt === "visual" ||
+                      tt === "narration" ||
+                      tt === "dialogue" ||
+                      tt === "action" ||
+                      tt === "sfx" ||
+                      tt === "info" ||
+                      tt === "environment" ||
+                      tt === "subtitle"
+                        ? tt
+                        : "";
+                    const className = ["clip", toneClass, isDanger ? "danger" : ""].filter(Boolean).join(" ");
 
                     const onClipPointerDown = (ev: React.PointerEvent, mode: DragMode) => {
                       if (locked) return;
@@ -1095,9 +1304,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                           outline: isSelected ? "2px solid rgba(106,166,255,0.8)" : "none",
                           outlineOffset: "1px"
                         }}
-                        title={`${it.title}\n${fmtTime(it.start)} - ${fmtTime(it.end)}\n${it.subtitle ?? ""}\n${
-                          isDanger ? `⚠ ${t("tooltipCpsWarn", { cps: cps.toFixed(2), max: cpsThreshold })}` : ""
-                        }`}
+                        title={clipTitleTooltip}
                         onPointerDown={(ev) => onClipPointerDown(ev, "move")}
                       >
                         <div
@@ -1109,8 +1316,17 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                         <div className="clipBody">
                           <div className="clipTitle">
                             {it.title}{" "}
-                            <span className="mono" style={{ opacity: 0.75 }}>
-                              {fmtTime(it.start)}-{fmtTime(it.end)}
+                            <span
+                              className="mono"
+                              style={{ opacity: 0.75 }}
+                              title={t("clipDurationTooltip", {
+                                start: fmtTime(it.start),
+                                end: fmtTime(it.end)
+                              })}
+                            >
+                              {t("clipDurationDisplay", {
+                                sec: Math.max(0, it.end - it.start).toFixed(1)
+                              })}
                             </span>
                           </div>
                           {it.trackType === "visual" && it.subtitle ? (

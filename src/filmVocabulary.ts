@@ -46,6 +46,13 @@ export type CameraMoveCode = (typeof CAMERA_MOVE_CODES)[number];
 export const MOVE_AMPLITUDES = ["S", "M", "L"] as const;
 export type MoveAmplitude = (typeof MOVE_AMPLITUDES)[number];
 
+/** 幅度 code → 中文（画面结构化字段摘要 / 检查器） */
+export const MOVE_AMPLITUDE_LABELS_ZH: Record<MoveAmplitude, string> = {
+  S: "小",
+  M: "中",
+  L: "大"
+};
+
 /** 景别 code → 中文简称（供 UI / 日志） */
 export const FRAMING_LABELS_ZH: Record<FramingCode, string> = {
   EWS: "极远景",

@@ -6,7 +6,7 @@
 - 画面分镜（`Shot xx | 0:00-0:02 | ...`）
 - Seedance 对白/旁白时间码（`[0:05.5-0:08] ...`）
 
-工程 JSON 还应把**表演/走位**落到 **`trk_action`** 的 `clips`，勿只写进画面 `description`（见规范 §5.7）。另可含**音效轨**（§7.7）。从 Markdown 解析时：Shot 描述里用 **`动作：`** / **`Action:`** 等前缀的行会自动拆到动作轨；解析器也会预留空 `trk_sfx`。
+工程 JSON 还应把**表演/走位**落到 **`trk_action`** 的 `clips`，勿只写进画面 `description`（见规范 §5.7）；**场景/时空**可走 **`trk_environment`**（时间在 UI 上介于信息轨与画面轨之间，见规范）。另可含**音效轨**（§7.7）。从 Markdown 解析时：Shot 描述里用 **`动作：`** / **`Action:`** 等前缀的行会自动拆到动作轨；解析器会按 `src/canonicalTracks.ts` 补齐默认轨道（含环境轨）。
 
 这个工具会把它们解析成：
 - `cuts`：时间点分界
@@ -19,15 +19,20 @@
 ## 安装
 
 ```bash
-cd "/Users/wanghuijuan/Documents/script_cut"
+git clone <你的仓库 URL>
+cd script_cut
 npm i
 ```
+
+（若已在本地目录开发，直接进入该目录执行 `npm i` 即可。）
 
 ## 解析你的脚本（生成 out.json + report.md）
 
 ```bash
-npm run parse -- "/Users/wanghuijuan/chenxi_project/prompts/20260509_陈曦_Seedance_你外卖到了_宽屏分镜_v1.md" --out out.json --report report.md --cps 12
+npm run parse -- "./your-script.md" --out out.json --report report.md --cps 12
 ```
+
+把 `./your-script.md` 换成你的 Markdown 分镜脚本路径。
 
 说明：
 - `--cps 12` 是一个偏“现实口播”的报警阈值
@@ -48,27 +53,37 @@ npm run dev
 打开浏览器访问 `http://127.0.0.1:5173/`。
 
 操作流程：
-- 先用 CLI 生成 `out.json`
-- 在 UI 里点击「导入 JSON」选择 `out.json`
-- 拖拽片段移动；拖拽左右边缘拉伸时长；开启“吸附 cut”可对齐画面段落边界
-- 点击「导出 JSON」下载 `project.edited.json`
+- 先用 CLI 生成 `out.json`，或由 AI 直接产出符合规范的 JSON
+- 在 UI 里点击「导入 JSON」选择文件；浏览器标签与侧栏使用 `public/scriptcut-logo.png` 品牌图标（仓库自备，无第三方版权问题；可自行替换）
+- 拖拽片段移动；左右细条拉伸；**Ctrl/⌘ + 细条**为全轨波纹；同轨相邻接缝处可 **roll（黄条）**（含画面轨）
+- 无刻度空白：**单击**选中整条全局空隙，或横向拖选空隙；**Delete** 波纹左移后续内容（与删单片段区分）
+- 「一键延长」口播偏短时为**全时间线波纹**（片段与画面段一起在 `原出点` 之后右移）
+- 导出 JSON 文件名一般为 **`{工程 inputPath 去扩展名}_edited.json`**（无法解析路径时为 `project_edited.json`）
+
+详细交互说明见界面内「帮助模式」及 `docs/SCRIPT_CUT_AI_SPEC.md`。
+
+## 许可
+
+本项目以 **MIT** 许可证开源，见仓库根目录 [`LICENSE`](LICENSE)。
 
 ## 版本管理（GitHub）
 
-本地已初始化 Git 并完成首次提交。把代码推到 GitHub 只需再建远程仓库并推送一次：
-
-1. 浏览器打开 <https://github.com/new>，新建仓库（例如名 `script_cut`），**不要**勾选添加 README（本地已有）。
-2. 在本项目目录终端执行（把 `你的用户名` 换成你的 GitHub 用户名）：
+推送前建议：
 
 ```bash
-cd "/Users/wanghuijuan/Documents/script_cut"
-git remote add origin https://github.com/你的用户名/script_cut.git
-git push -u origin main
+npm run typecheck
+npm run build
 ```
 
-若 GitHub 要求登录：HTTPS 需使用 **Personal Access Token**（仓库设置里生成，权限勾选 `repo`），代替密码；或使用 **SSH**（本机 `ssh-keygen` 后把公钥加到 GitHub → Settings → SSH keys），并把上面地址改成 `git@github.com:你的用户名/script_cut.git`。
+若尚未添加远程仓库：浏览器打开 <https://github.com/new> 新建空仓库后执行 `git remote add origin …` 再 `git push -u origin main`。  
+若本地已有 `origin`（例如 `script_cut`），直接：
 
-可选：安装 [GitHub CLI](https://cli.github.com/) 后执行 `gh auth login`，再用 `gh repo create script_cut --private --source=. --remote=origin --push` 一条龙创建并推送。
+```bash
+git add -A
+git status   # 确认包含 public/ 与 canonicalTracks.ts 等
+git commit -m "feat(ui): 环境轨、空隙点选、全局波纹延长、roll 画面轨等"
+git push origin main
+```
 
-提交邮箱当前设为 `wanghuijuan@users.noreply.github.com`，若要改成自己的，可执行：`git config user.email "你的邮箱"`。
+登录方式：HTTPS 使用 **Personal Access Token**；或使用 **SSH**。也可用 [GitHub CLI](https://cli.github.com/)：`gh auth login` 后推送。
 

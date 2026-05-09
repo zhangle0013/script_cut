@@ -1,9 +1,15 @@
+import { mergeMissingTracks } from "../canonicalTracks.js";
 import type { Clip, ScriptCutProject, TrackType, VisualSegment } from "../types.js";
 import {
+  CAMERA_MOVE_CODES,
   CAMERA_MOVE_LABELS_ZH,
+  FRAMING_CODES,
   FRAMING_LABELS_ZH,
+  MOVE_AMPLITUDE_LABELS_ZH,
+  MOVE_AMPLITUDES,
   type CameraMoveCode,
-  type FramingCode
+  type FramingCode,
+  type MoveAmplitude
 } from "../filmVocabulary.js";
 import { estimateSpeech, splitByPunctuation, type SpeechModelParams, DEFAULT_SPEECH_PARAMS } from "./speechModel.js";
 import { snapToCuts } from "./utils.js";
@@ -34,9 +40,20 @@ export interface TimelineItemBase {
   rawText?: string;
 }
 
+/** 画面段结构化字段自检问题码（供时间轴标红与 i18n） */
+export type VisualStructIssue =
+  | "invalidFramingStart"
+  | "invalidFramingEnd"
+  | "invalidCameraMove"
+  | "invalidMoveAmplitude"
+  | "framingOneSided"
+  | "moveHintInvalid";
+
 export interface TimelineItemVisual extends TimelineItemBase {
   kind: "visualSegment";
   segmentId: string;
+  /** 非空时与对白「语速过快」一样走 danger 样式 */
+  visualStructIssues?: VisualStructIssue[];
 }
 
 export interface TimelineItemClip extends TimelineItemBase {
@@ -59,6 +76,48 @@ export interface TimelineProjectState {
 /**
  * 由画面段 JSON 生成时间轴卡片上的摘要行（与检查器结构化字段一致，改字段后只依赖 project 重算即可）。
  */
+const FRAMING_SET = new Set<string>(FRAMING_CODES);
+const CAMERA_SET = new Set<string>(CAMERA_MOVE_CODES);
+const AMPLITUDE_SET = new Set<string>(MOVE_AMPLITUDES);
+
+/**
+ * 检查画面段结构化字段是否与 `filmVocabulary` 枚举一致、景别是否成对等。
+ * 不校验自由文本 `framing` / `camera` / `description` 内容是否合理。
+ */
+export function visualSegmentStructIssues(s: VisualSegment): VisualStructIssue[] {
+  const issues: VisualStructIssue[] = [];
+
+  const s0 = s.framingStart != null ? String(s.framingStart).trim() : "";
+  const s1 = s.framingEnd != null ? String(s.framingEnd).trim() : "";
+  const invalidStart = s0 !== "" && !FRAMING_SET.has(s0);
+  const invalidEnd = s1 !== "" && !FRAMING_SET.has(s1);
+  if (invalidStart) issues.push("invalidFramingStart");
+  if (invalidEnd) issues.push("invalidFramingEnd");
+  /** 仅当两端都不是非法 code 时，提示「只填了 framingStart 或只填了 framingEnd」 */
+  if (!invalidStart && !invalidEnd && (s0 !== "") !== (s1 !== "")) {
+    issues.push("framingOneSided");
+  }
+
+  const cm = s.cameraMove != null ? String(s.cameraMove).trim() : "";
+  if (cm !== "" && !CAMERA_SET.has(cm)) {
+    issues.push("invalidCameraMove");
+  }
+
+  const amp = s.moveAmplitude != null ? String(s.moveAmplitude).trim() : "";
+  if (amp !== "" && !AMPLITUDE_SET.has(amp)) {
+    issues.push("invalidMoveAmplitude");
+  }
+
+  if (s.moveDurationHint != null) {
+    const h = s.moveDurationHint;
+    if (typeof h !== "number" || !Number.isFinite(h) || h <= 0) {
+      issues.push("moveHintInvalid");
+    }
+  }
+
+  return issues;
+}
+
 export function visualSegmentCardFields(s: VisualSegment): { subtitle: string; rawText: string } {
   const fz = (code: FramingCode | undefined) => (code ? FRAMING_LABELS_ZH[code] ?? code : "");
   const framingBits =
@@ -66,7 +125,10 @@ export function visualSegmentCardFields(s: VisualSegment): { subtitle: string; r
       ? `${fz(s.framingStart)}→${fz(s.framingEnd)}`
       : [fz(s.framingStart), fz(s.framingEnd), s.framing].filter(Boolean).join(" ");
   const moveZh = s.cameraMove ? CAMERA_MOVE_LABELS_ZH[s.cameraMove as CameraMoveCode] ?? s.cameraMove : "";
-  const camBits = [moveZh, s.moveAmplitude, s.camera].filter(Boolean).join(" · ");
+  const ampZh = s.moveAmplitude
+    ? MOVE_AMPLITUDE_LABELS_ZH[s.moveAmplitude as MoveAmplitude] ?? s.moveAmplitude
+    : "";
+  const camBits = [moveZh, ampZh, s.camera].filter(Boolean).join(" · ");
   return {
     subtitle: [framingBits, camBits].filter(Boolean).join(" · "),
     rawText: s.description ?? ""
@@ -85,6 +147,8 @@ export function getTrackName(type: TrackType): string {
       return "动作/节拍";
     case "info":
       return "信息/参考";
+    case "environment":
+      return "环境/场景";
     case "subtitle":
       return "字幕";
     case "sfx":
@@ -105,6 +169,7 @@ export function toTimelineState(project: ScriptCutProject): TimelineProjectState
   // 1) 视觉段落 -> 映射成 visual 轨的 items（结构化行优先中文释义）
   for (const s of project.visualSegments) {
     const card = visualSegmentCardFields(s);
+    const visualStructIssues = visualSegmentStructIssues(s);
     items.push({
       id: `item_vs_${s.id}`,
       kind: "visualSegment",
@@ -114,7 +179,8 @@ export function toTimelineState(project: ScriptCutProject): TimelineProjectState
       end: s.end,
       title: s.label,
       subtitle: card.subtitle,
-      rawText: card.rawText
+      rawText: card.rawText,
+      ...(visualStructIssues.length > 0 ? { visualStructIssues } : {})
     });
   }
 
@@ -138,10 +204,11 @@ export function toTimelineState(project: ScriptCutProject): TimelineProjectState
 
   /**
    * 时间轴自上而下轨顺序
-   * 音效轨放在旁白之下，便于口播与音效上下对照；动作/节拍仍靠上。
+   * 环境轨在信息/参考与画面之间，便于先读场景再对镜；音效仍在旁白之下。
    */
   const trackOrder: TrackType[] = [
     "info",
+    "environment",
     "visual",
     "action",
     "dialogue",
@@ -282,16 +349,14 @@ export function trackTypeOfClip(project: ScriptCutProject, clip: Clip): TrackTyp
 }
 
 /**
- * 一键修复“超速对白/旁白”：把 clip 延长到“建议最短时长”，并将同轨后续 clips 统一推后（ripple）。
+ * 一键修复“超速对白/旁白”：把 clip 延长到“建议最短时长”，并对「整条时间线」做 ripple（与口播排队全局 ripple 同类）。
  *
- * 为什么要 ripple：
- * - 单纯延长 end 会压到后面的 clip，导致时间轴更乱
- * - ripple 能保持相对间隔，让你一次修复后整体节奏更稳定
- *
- * ripple 规则（MVP，可解释）：
- * - 只影响“同一 trackId”上的 clips
- * - 只推后那些 start >= 原 end 的 clips（也就是“在它后面开始”的）
- * - 对于与当前 clip 重叠的其它 clips（例如多人抢话），不动
+ * ripple 规则：
+ * - 当前片段只拉长 end（起点不变）
+ * - 所有其它 clips：若 start >= 延长前的原 end，则整条 clip 右移 delta
+ * - 所有 visualSegments：同样 start >= oldEnd 则整体右移 delta（保持声画相对对齐）
+ * - cuts：若有画面段则从片段边界重建；若无画面段则对每个 cut.t >= oldEnd 加 delta
+ * - 起点早于 oldEnd 但与延长区间相交的重叠片段不推移（与原先「同轨抢话」策略一致，避免误伤）
  */
 export function extendClipToMinSpeechDurationWithRipple(
   project: ScriptCutProject,
@@ -320,6 +385,7 @@ export function extendClipToMinSpeechDurationWithRipple(
 
   const next: ScriptCutProject = {
     ...project,
+    visualSegments: project.visualSegments.map((s) => ({ ...s })),
     clips: project.clips.map((c) => ({ ...c }))
   };
 
@@ -328,10 +394,26 @@ export function extendClipToMinSpeechDurationWithRipple(
       c.end = roundMs(c.end + delta);
       continue;
     }
-    if (c.trackId === clip.trackId && c.start >= oldEnd) {
+    if (c.start >= oldEnd) {
       c.start = roundMs(c.start + delta);
       c.end = roundMs(c.end + delta);
     }
+  }
+
+  for (const s of next.visualSegments) {
+    if (s.start >= oldEnd) {
+      s.start = roundMs(s.start + delta);
+      s.end = roundMs(s.end + delta);
+    }
+  }
+
+  if (next.visualSegments.length > 0) {
+    next.cuts = buildCutsFromVisualSegments(next.visualSegments);
+  } else {
+    next.cuts = next.cuts.map((cu) => ({
+      ...cu,
+      t: cu.t >= oldEnd ? roundMs(cu.t + delta) : cu.t
+    }));
   }
 
   return { next, applied: true, suggestedMin };
@@ -773,6 +855,10 @@ export function readProjectFromJsonText(text: string): ScriptCutProject {
     throw new Error("project 结构不完整（缺 tracks/cuts/visualSegments）");
   }
   if (!Array.isArray(project.clips)) throw new Error("project 结构不完整（缺 clips）");
-  return project as ScriptCutProject;
+  const raw = project as ScriptCutProject;
+  return {
+    ...raw,
+    tracks: mergeMissingTracks(raw.tracks)
+  };
 }
 

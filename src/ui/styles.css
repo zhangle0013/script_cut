@@ -81,6 +81,38 @@ body {
   font-size: 12px;
 }
 
+/** 侧栏顶部：Logo + 标题（与 favicon 使用同一 `public/scriptcut-logo.png`） */
+.appTitleBar.title {
+  align-items: flex-start;
+}
+
+.appBrand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.appLogo {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  flex-shrink: 0;
+  object-fit: cover;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+
+.appBrandText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.appBrandText h1 {
+  line-height: 1.25;
+}
+
 /**
  * 左侧「步骤流程」卡片标题：与普通 cardTitle 区分，带步骤感
  */
@@ -330,14 +362,14 @@ body {
 
 .workAreaShade {
   position: absolute;
-  top: 28px;
+  top: 34px;
   bottom: 0;
   background: rgba(0, 0, 0, 0.35);
 }
 
 .workAreaActive {
   position: absolute;
-  top: 28px;
+  top: 34px;
   bottom: 0;
   box-sizing: border-box;
   border-left: 1px dashed rgba(106, 166, 255, 0.45);
@@ -353,17 +385,19 @@ body {
   margin-left: -1px;
   background: rgba(255, 77, 120, 0.95);
   box-shadow: 0 0 10px rgba(255, 77, 120, 0.35);
-  z-index: 8;
+  /** 高于标尺与 clip，避免 scrub 时播放头被盖住 */
+  z-index: 55;
   pointer-events: none;
 }
 
 /**
- * 动作/节拍轨与音效轨之间的分组线：用暖色/冷色对比，比纯白分割线更易区分上下区域
+ * 对白轨上方的分组线（口播区与画面上方轨分界）：纯装饰，不参与命中，避免挡住轨高拖动条
  */
 .trackSoundDivider {
   width: 100%;
   height: 6px;
   flex-shrink: 0;
+  pointer-events: none;
   background: linear-gradient(
     180deg,
     rgba(255, 120, 72, 0.38) 0%,
@@ -491,6 +525,11 @@ body {
   border-color: rgba(255, 255, 255, 0.18);
 }
 
+.toolbarBtn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .toolbarBtnPrimary {
   border-color: rgba(106, 166, 255, 0.45);
   background: rgba(106, 166, 255, 0.14);
@@ -512,14 +551,16 @@ body {
 .ruler {
   position: sticky;
   top: 0;
-  z-index: 5;
+  /** 高于 clip（10–26），竖向滚动时标尺盖住下方内容上移，避免片段叠到标尺上 */
+  z-index: 50;
   background: rgba(11, 13, 18, 0.85);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
   height: 34px;
   user-select: none;
   -webkit-user-select: none;
-  cursor: default;
+  /** 与 scrub 播放头一致，提示可横向拖动 */
+  cursor: ew-resize;
 }
 
 .rulerTicks {
@@ -562,7 +603,8 @@ body {
 .trackLabel {
   position: sticky;
   left: 0;
-  z-index: 4;
+  /** 高于 clip，横向滚动时左侧轨名/按钮始终压住片段，避免「叠到轨道头上」 */
+  z-index: 45;
   flex: 0 0 140px;
   width: 140px;
   min-height: 52px;
@@ -644,9 +686,45 @@ body {
   border-color: rgba(255, 191, 61, 0.28);
 }
 
+.clip.dialogue {
+  background: rgba(86, 204, 242, 0.12);
+  border-color: rgba(86, 204, 242, 0.32);
+}
+
+.clip.action {
+  background: rgba(183, 121, 255, 0.12);
+  border-color: rgba(183, 121, 255, 0.3);
+}
+
+.clip.sfx {
+  background: rgba(255, 122, 162, 0.11);
+  border-color: rgba(255, 122, 162, 0.32);
+}
+
+.clip.info {
+  background: rgba(160, 174, 192, 0.1);
+  border-color: rgba(160, 174, 192, 0.28);
+}
+
+/** 环境/场景轨：偏大地色，与信息轨灰蓝、画面轨绿色区分 */
+.clip.environment {
+  background: rgba(180, 140, 95, 0.12);
+  border-color: rgba(212, 165, 116, 0.35);
+}
+
+.clip.subtitle {
+  background: rgba(129, 140, 248, 0.12);
+  border-color: rgba(129, 140, 248, 0.3);
+}
+
 .clip.danger {
   border-color: rgba(255, 77, 77, 0.75);
   box-shadow: 0 0 0 1px rgba(255, 77, 77, 0.35) inset;
+}
+
+/** 画面轨标红时，结构化摘要行改为偏红，避免仍显「全绿」误导 */
+.clip.danger.clip.visual .clipStruct {
+  color: rgba(255, 170, 170, 0.92);
 }
 
 .clipTitle {

@@ -5,6 +5,7 @@ import {
   CAMERA_MOVE_LABELS_ZH,
   FRAMING_CODES,
   FRAMING_LABELS_ZH,
+  MOVE_AMPLITUDE_LABELS_ZH,
   MOVE_AMPLITUDES
 } from "../filmVocabulary.js";
 import { kindLabel, trackTypeLabel } from "./i18n.js";
@@ -31,7 +32,7 @@ import {
   toTimelineState,
   updateVisualSegmentFields
 } from "./model.js";
-import { downloadText, fmtTime } from "./utils.js";
+import { downloadText, editedExportFilename, fmtTime } from "./utils.js";
 import { DEFAULT_SPEECH_PARAMS, estimateSpeech } from "./speechModel.js";
 
 /**
@@ -239,7 +240,10 @@ export function App() {
           project,
           timelineState.items.filter((i) => selectedIds.includes(i.id))
         );
-        if (payload) clipboardRef.current = payload;
+        if (payload) {
+          e.preventDefault();
+          clipboardRef.current = payload;
+        }
         return;
       }
       if (e.key === "v" || e.key === "V") {
@@ -320,6 +324,25 @@ export function App() {
   }, [helpMode, timelineState, selectedIds]);
 
   /**
+   * Ctrl+A（Windows/Linux）/ Cmd+A（macOS）：仅当焦点在时间线根节点（`[data-timeline-focus-root]`）内时全选 clip；
+   * 检查 `metaKey` 以支持 Mac Command 键。
+   */
+  useEffect(() => {
+    if (helpMode || !timelineState || timelineState.items.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      const root = document.querySelector("[data-timeline-focus-root]");
+      const ae = document.activeElement;
+      if (!root || !(ae instanceof HTMLElement) || !root.contains(ae)) return;
+      if (ae.matches("input, textarea, select, [contenteditable='true']")) return;
+      if (!(e.ctrlKey || e.metaKey) || (e.key !== "a" && e.key !== "A")) return;
+      e.preventDefault();
+      setSelectedIds(timelineState.items.map((i) => i.id));
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [helpMode, timelineState]);
+
+  /**
    * Delete / Backspace：单选一条时间线条目时从工程中删除（删间隙仍由 Timeline 在捕获阶段优先处理）。
    */
   useEffect(() => {
@@ -368,7 +391,7 @@ export function App() {
     if (!timelineState) return;
     const nextProject = applyItemsToProject(timelineState.project, timelineState.items);
     const content = JSON.stringify({ project: nextProject }, null, 2);
-    downloadText("project.edited.json", content, "application/json");
+    downloadText(editedExportFilename(nextProject.inputPath), content, "application/json");
   };
 
   const onReset = () => {
@@ -378,6 +401,12 @@ export function App() {
     redoStackRef.current = [];
     setPlayheadSec(0);
     setPlaying(false);
+    /** 避免清空后仍显示上次导入错误、或沿用上一工程的轨显隐/高度/工作区 */
+    setImportError(null);
+    setTrackStates({});
+    setTrackHeights({});
+    setWorkInSec(null);
+    setWorkOutSec(null);
   };
 
   const onChangeItems = (nextItems: Parameters<typeof applyItemsToProject>[1]) => {
@@ -449,8 +478,11 @@ export function App() {
       quantizeMs: 10,
       rippleVisualSegments: true
     });
-    if (shiftedCount > 0) setProject(next);
-    setSelectedIds([]);
+    if (shiftedCount > 0) {
+      setProject(next);
+      /** 仅在实际改动工程时清空多选，避免「无重叠可排」仍丢掉当前选中 */
+      setSelectedIds([]);
+    }
   };
 
   const onToggleTrackFlag = (type: TrackType, flag: "locked" | "solo" | "hidden") => {
@@ -474,9 +506,17 @@ export function App() {
           <div className="leftBar">
             <div className="leftBarInner">
               <div className="card">
-                <div className="title" style={{ marginBottom: 6 }}>
-                  <h1 style={{ fontSize: 16 }}>{t("appTitle")}</h1>
-                  <div className="hint">{t("appTagline")}</div>
+                <div className="title appTitleBar" style={{ marginBottom: 6 }}>
+                  <div className="appBrand">
+                    {/**
+                     * 品牌图标：`public/scriptcut-logo.png`，与 index.html favicon 同源，构建后由站点根路径提供
+                     */}
+                    <img className="appLogo" src="/scriptcut-logo.png" alt="" width={44} height={44} decoding="async" />
+                    <div className="appBrandText">
+                      <h1 style={{ fontSize: 16 }}>{t("appTitle")}</h1>
+                      <div className="hint">{t("appTagline")}</div>
+                    </div>
+                  </div>
                 </div>
                 <div className="langRow">
                   <label>{t("languageLabel")}</label>
@@ -554,7 +594,10 @@ export function App() {
                     max={420}
                     step={10}
                     value={pxPerSec}
-                    onChange={(e) => setPxPerSec(Number(e.target.value))}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      setPxPerSec(Number.isFinite(n) ? n : pxPerSec);
+                    }}
                     title={t("pxPerSecTitle")}
                     style={{ width: 110 }}
                   />
@@ -582,7 +625,10 @@ export function App() {
                     max={0.5}
                     step={0.01}
                     value={snapThresholdSec}
-                    onChange={(e) => setSnapThresholdSec(Number(e.target.value))}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n)) setSnapThresholdSec(n);
+                    }}
                     style={{ width: 110 }}
                   />
                 </div>
@@ -595,7 +641,10 @@ export function App() {
                     max={200}
                     step={1}
                     value={cpsThreshold}
-                    onChange={(e) => setCpsThreshold(Number(e.target.value))}
+                    onChange={(e) => {
+                      const n = Number(e.target.value);
+                      if (Number.isFinite(n)) setCpsThreshold(n);
+                    }}
                     style={{ width: 110 }}
                     title={t("cpsTooltip")}
                   />
@@ -805,7 +854,13 @@ export function App() {
                   >
                     {t("toolbarWorkClear")}
                   </button>
-                  <button type="button" className="toolbarBtn" onClick={onSplitAtPlayhead} title={t("toolbarSplit")}>
+                  <button
+                    type="button"
+                    className="toolbarBtn"
+                    onClick={onSplitAtPlayhead}
+                    disabled={selectedIds.length === 0}
+                    title={t("toolbarSplit")}
+                  >
                     {t("toolbarSplit")}
                   </button>
                   <button type="button" className="toolbarBtn" onClick={undo} title={t("toolbarUndo")}>
@@ -987,7 +1042,7 @@ export function App() {
                                 <option value="">{t("selectNone")}</option>
                                 {MOVE_AMPLITUDES.map((c) => (
                                   <option key={c} value={c}>
-                                    {c}
+                                    {locale === "zh" ? `${MOVE_AMPLITUDE_LABELS_ZH[c]}（${c}）` : c}
                                   </option>
                                 ))}
                               </select>
