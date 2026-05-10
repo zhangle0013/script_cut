@@ -1,5 +1,6 @@
 import React, { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraMoveCode, FramingCode, MoveAmplitude, ScriptCutProject, TrackType } from "../types.js";
+import { clampVisualSegmentInterval } from "./visualSegmentClamp.js";
 import {
   CAMERA_MOVE_CODES,
   CAMERA_MOVE_LABELS_ZH,
@@ -18,12 +19,14 @@ import {
   cloneProject,
   duplicateTimelineItems,
   pasteClipboardAtTime,
-  splitTimelineItemAtTime
+  splitTimelineItemAtTime,
+  TIMELINE_SPLIT_EDGE_PAD_SEC
 } from "./editOps.js";
 import {
   applyItemsToProject,
   autoGenerateCutsAndRebuildVisualSegments,
   deleteTimelineItemsFromProject,
+  extendClipToMinSpeechDurationNoRipple,
   extendClipToMinSpeechDurationWithRipple,
   resolveSpeechOverlapsWithGlobalRipple,
   readProjectFromJsonText,
@@ -56,7 +59,7 @@ export function App() {
 
   const [pxPerSec, setPxPerSec] = useState(140);
   const [snapEnabled, setSnapEnabled] = useState(true);
-  const [snapThresholdSec, setSnapThresholdSec] = useState(0.08);
+  const [snapThresholdSec, setSnapThresholdSec] = useState(0.1);
   const [cpsThreshold, setCpsThreshold] = useState(DEFAULT_CPS_THRESHOLD);
 
   /** 多选：时间线条目 id（item_vs_* / item_clip_*） */
@@ -280,7 +283,7 @@ export function App() {
       const step = e.shiftKey ? 0.5 : 0.1;
       const delta = e.key === "ArrowLeft" ? -step : step;
       const sel = new Set(selectedIds);
-      const next = timelineState.items.map((it) => {
+      let next = timelineState.items.map((it) => {
         if (!sel.has(it.id)) return it;
         const dur = it.end - it.start;
         let s = it.start + delta;
@@ -292,6 +295,18 @@ export function App() {
         const r = (x: number) => Math.round(x * 1000) / 1000;
         return { ...it, start: r(s), end: r(en) };
       });
+      /** 画面轨：←→ 平移后与其它画面段不得重叠（按开始时间顺序依次钳制） */
+      const visualSelIds = next
+        .filter((it) => sel.has(it.id) && it.kind === "visualSegment")
+        .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id))
+        .map((it) => it.id);
+      const minDur = 0.1;
+      for (const vid of visualSelIds) {
+        const cur = next.find((i) => i.id === vid);
+        if (!cur || cur.kind !== "visualSegment") continue;
+        const c = clampVisualSegmentInterval(next, vid, cur.start, cur.end, minDur);
+        next = next.map((it) => (it.id === vid ? { ...it, start: c.start, end: c.end } : it));
+      }
       setProject(applyItemsToProject(timelineState.project, next));
     };
     window.addEventListener("keydown", onKey);
@@ -415,11 +430,20 @@ export function App() {
     setProject(nextProject);
   };
 
-  const onFixOverspeedSelected = () => {
+  const onFixOverspeedRipple = () => {
     if (!project || !selectedItem) return;
     if (selectedItem.kind !== "clip") return;
     beginGesture();
     const { next, applied } = extendClipToMinSpeechDurationWithRipple(project, selectedItem.clipId, DEFAULT_SPEECH_PARAMS);
+    if (applied) setProject(next);
+  };
+
+  /** 只加长本条口播出点，不推移后续片段 / 画面轨 / cuts */
+  const onFixOverspeedNoRipple = () => {
+    if (!project || !selectedItem) return;
+    if (selectedItem.kind !== "clip") return;
+    beginGesture();
+    const { next, applied } = extendClipToMinSpeechDurationNoRipple(project, selectedItem.clipId, DEFAULT_SPEECH_PARAMS);
     if (applied) setProject(next);
   };
 
@@ -455,6 +479,42 @@ export function App() {
     setProject(nextP);
     setSelectedIds([]);
   };
+
+  /**
+   * 在播放头时刻对所有「内部穿过播放头」的片段各切一刀（无需事先选中）。
+   * 顺序按时间线排序，避免同一刀多次作用在同一逻辑条目上。
+   */
+  const onSplitAllAtPlayhead = () => {
+    if (!timelineState || !project) return;
+    const tCut = playheadSec;
+    const pad = TIMELINE_SPLIT_EDGE_PAD_SEC;
+    const ids = sortedTimelineItemIds(timelineState.items, timelineState.trackOrder).filter((id) => {
+      const it = timelineState.items.find((i) => i.id === id);
+      return it != null && tCut > it.start + pad && tCut < it.end - pad;
+    });
+    if (ids.length === 0) return;
+    beginGesture();
+    let nextP = project;
+    let state = toTimelineState(nextP);
+    for (const id of ids) {
+      const it = state.items.find((i) => i.id === id);
+      if (!it) continue;
+      const r = splitTimelineItemAtTime(nextP, it, tCut);
+      if (!r) continue;
+      nextP = r.next;
+      state = toTimelineState(nextP);
+    }
+    setProject(nextP);
+    setSelectedIds([]);
+  };
+
+  /** 播放头处可拆分的条目数（用于禁用「全部拆分」按钮） */
+  const splittableCountAtPlayhead = useMemo(() => {
+    if (!timelineState) return 0;
+    const t = playheadSec;
+    const pad = TIMELINE_SPLIT_EDGE_PAD_SEC;
+    return timelineState.items.filter((it) => t > it.start + pad && t < it.end - pad).length;
+  }, [timelineState, playheadSec]);
 
   const onAutoCuts = () => {
     if (!project) return;
@@ -863,6 +923,15 @@ export function App() {
                   >
                     {t("toolbarSplit")}
                   </button>
+                  <button
+                    type="button"
+                    className="toolbarBtn"
+                    onClick={onSplitAllAtPlayhead}
+                    disabled={splittableCountAtPlayhead === 0}
+                    title={t("toolbarSplitAllAtPlayhead")}
+                  >
+                    {t("toolbarSplitAllAtPlayhead")}
+                  </button>
                   <button type="button" className="toolbarBtn" onClick={undo} title={t("toolbarUndo")}>
                     {t("toolbarUndo")}
                   </button>
@@ -1123,10 +1192,13 @@ export function App() {
                                     <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                                       <button
                                         className="btn btnPrimary"
-                                        onClick={onFixOverspeedSelected}
+                                        onClick={onFixOverspeedRipple}
                                         disabled={!overspeed}
                                       >
-                                        {t("extendOneClick")}
+                                        {t("extendRipple")}
+                                      </button>
+                                      <button className="btn" onClick={onFixOverspeedNoRipple} disabled={!overspeed}>
+                                        {t("extendNoRipple")}
                                       </button>
                                       <button className="btn" onClick={() => onSplitSelected(false)}>
                                         {t("splitByPunc")}

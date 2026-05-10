@@ -449,19 +449,28 @@ body {
   min-width: 0;
 }
 
+/**
+ * Roll（滚动）接点：必须压在两侧 clip 之上，否则 z-index 低于片段时几乎点不到
+ */
 .rollJunction {
   position: absolute;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 10px;
-  height: min(120px, calc(100% - 8px));
-  min-height: 28px;
-  border-radius: 4px;
+  /**
+   * 命中条不宜铺满整轨高度，否则会压住两侧 clip 的边缘手柄；
+   * 父级为整条 lane（flex 撑满），用百分比约束为约「半轨高」。
+   */
+  width: 12px;
+  height: min(72px, 50%);
+  min-height: 18px;
+  max-height: calc(50% - 4px);
+  border-radius: 5px;
   background: rgba(255, 191, 61, 0.35);
   border: 1px solid rgba(255, 191, 61, 0.65);
-  z-index: 7;
+  z-index: 40;
   cursor: ew-resize;
   box-sizing: border-box;
+  touch-action: none;
 }
 
 .rollJunction:hover {
@@ -546,6 +555,21 @@ body {
   border-left: 1px solid rgba(106, 166, 255, 0.55);
   border-right: 1px solid rgba(106, 166, 255, 0.55);
   pointer-events: none;
+}
+
+/**
+ * 仅当前轨空隙：Delete 只波纹本条轨；与全局空隙（蓝）区分。
+ * 实际渲染在 `.trackLane` 内（见 `.gapSelectionBandInLane`），与片段同一坐标系。
+ */
+.gapSelectionBandTrack {
+  background: rgba(255, 191, 61, 0.12);
+  border-left-color: rgba(255, 191, 61, 0.55);
+  border-right-color: rgba(255, 191, 61, 0.55);
+}
+
+/** 相对 lane 左缘定位；z-index 低于 .clip，避免盖住片段 */
+.gapSelectionBandInLane {
+  z-index: 8;
 }
 
 .ruler {

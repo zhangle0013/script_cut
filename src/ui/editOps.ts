@@ -6,7 +6,10 @@ export function cloneProject(project: ScriptCutProject): ScriptCutProject {
   return JSON.parse(JSON.stringify(project)) as ScriptCutProject;
 }
 
-const TIME_PAD = 0.05;
+/** 刀口距片段首尾的最小间隔（秒），与 `splitTimelineItemAtTime` 内判定一致 */
+export const TIMELINE_SPLIT_EDGE_PAD_SEC = 0.05;
+
+const TIME_PAD = TIMELINE_SPLIT_EDGE_PAD_SEC;
 
 function roundMs(x: number): number {
   return Math.round(x * 1000) / 1000;
@@ -23,7 +26,7 @@ function newSegmentId(n: number): string {
 /**
  * 在时刻 t 切开一条时间线 item（画面段或 clip）。
  * - 画面段：拆成两段并重建 cuts
- * - clip：拆成两条，文本按时长比例切分
+ * - clip：拆成两条；**不按时长比例切台词**，整段原文留在时间上前半段（左侧）片段，后半段文案为空（仅在时间上切开，便于在检查器里再分配）
  */
 export function splitTimelineItemAtTime(
   project: ScriptCutProject,
@@ -38,20 +41,19 @@ export function splitTimelineItemAtTime(
     const idx = next.visualSegments.findIndex((s) => s.id === item.segmentId);
     if (idx === -1) return null;
     const s = next.visualSegments[idx];
-    const ratio = (t - s.start) / (s.end - s.start);
+    /** 不按比例切开描述：整段留在播放头左侧画面段，右侧为空 */
     const desc = s.description ?? "";
-    const cutChar = Math.max(0, Math.min(desc.length, Math.round(desc.length * ratio)));
     const segA: VisualSegment = {
       ...s,
       end: roundMs(t),
-      description: desc.slice(0, cutChar)
+      description: desc
     };
     const segB: VisualSegment = {
       ...s,
       id: newSegmentId(1),
       start: roundMs(t),
       end: roundMs(s.end),
-      description: desc.slice(cutChar),
+      description: "",
       label: `${s.label}·2`
     };
     const vs = [...next.visualSegments];
@@ -64,20 +66,19 @@ export function splitTimelineItemAtTime(
   const cidx = next.clips.findIndex((c) => c.id === item.clipId);
   if (cidx === -1) return null;
   const c = next.clips[cidx];
-  const ratio = (t - c.start) / (c.end - c.start);
+  /** 不按时长比例切字符：整段台词留在播放头左侧 clip，右侧为空 */
   const text = c.text ?? "";
-  const cutI = Math.max(1, Math.min(text.length - 1, Math.round(text.length * ratio)));
   const cLeft: Clip = {
     ...c,
     end: roundMs(t),
-    text: text.slice(0, cutI)
+    text
   };
   const cRight: Clip = {
     ...c,
     id: newClipId(c.id, 1),
     start: roundMs(t),
     end: roundMs(c.end),
-    text: text.slice(cutI)
+    text: ""
   };
   const clips = [...next.clips];
   clips.splice(cidx, 1, cLeft, cRight);

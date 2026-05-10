@@ -66,6 +66,10 @@ npm run dev
 
 本项目以 **MIT** 许可证开源，见仓库根目录 [`LICENSE`](LICENSE)。
 
+## 更新日志
+
+各版本说明见 [`CHANGELOG.md`](CHANGELOG.md)。当前 `package.json` 版本号与发布记录一致。
+
 ## 版本管理（GitHub）
 
 推送前建议：
@@ -76,14 +80,23 @@ npm run build
 ```
 
 若尚未添加远程仓库：浏览器打开 <https://github.com/new> 新建空仓库后执行 `git remote add origin …` 再 `git push -u origin main`。  
-若本地已有 `origin`（例如 `script_cut`），直接：
+若本地已有 `origin`，提交并推送：
 
 ```bash
 git add -A
-git status   # 确认包含 public/ 与 canonicalTracks.ts 等
-git commit -m "feat(ui): 环境轨、空隙点选、全局波纹延长、roll 画面轨等"
+git status
+git commit -m "chore(release): v0.3.0"
 git push origin main
 ```
 
-登录方式：HTTPS 使用 **Personal Access Token**；或使用 **SSH**。也可用 [GitHub CLI](https://cli.github.com/)：`gh auth login` 后推送。
+打 **Git 标签**（便于 GitHub Releases 对应源码版本）：
+
+```bash
+git tag -a v0.3.0 -m "ScriptCut v0.3.0"
+git push origin v0.3.0
+```
+
+在 GitHub 仓库页 **Releases → Draft a new release**，选择标签 `v0.3.0`，标题例：`ScriptCut v0.3.0`，正文可粘贴 `CHANGELOG.md` 中对应段落。
+
+登录方式：HTTPS 使用 **Personal Access Token**；或使用 **SSH**。也可用 [GitHub CLI](https://cli.github.com/)：`gh auth login` 后推送；发布 Release 可用 `gh release create v0.3.0 --notes-file CHANGELOG.md`（按需裁剪正文）。
 

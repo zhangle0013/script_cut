@@ -13,6 +13,8 @@ import type { MessageKey } from "./i18n.js";
 import { trackTypeLabel } from "./i18n.js";
 import { useI18n } from "./I18nProvider.js";
 import type { TimelineItem, VisualStructIssue } from "./model.js";
+import { sortedTimelineItemIds } from "./model.js";
+import { clampVisualRollJunction, clampVisualSegmentInterval } from "./visualSegmentClamp.js";
 import { calcCps, fmtTime, snapToCuts } from "./utils.js";
 
 const TIME_EPS = 1e-6;
@@ -118,7 +120,11 @@ function computeTrackStackMetrics(laneItems: TimelineItem[], pxPerSec: number): 
       totalStackH: MIN_TRACK_H
     };
   }
-  const laneById = assignOverlapLanes(laneItems);
+  /** 画面轨：强制单行排列（时间上禁止重叠由拖拽/Roll 钳制），避免多层叠在同一条视觉带上 */
+  const isVisualTrack = laneItems.length > 0 && laneItems.every((it) => it.trackType === "visual");
+  const laneById = isVisualTrack
+    ? new Map(laneItems.map((it) => [it.id, 0]))
+    : assignOverlapLanes(laneItems);
   const laneIndices = Array.from(laneById.values());
   /** 最大层索引 + 1 = 层数（例如层号 0、1 → 共 2 层） */
   const laneCount = laneIndices.length === 0 ? 1 : Math.max(...laneIndices) + 1;
@@ -165,6 +171,98 @@ function mergeAllItemIntervals(items: TimelineItem[]): [number, number][] {
 
 /** 横向拖动空隙判定「已从点击升级为拖拽」的位移阈值（像素²） */
 const GAP_CLICK_DRAG_THRESHOLD_SQ = 36;
+
+/** `data-track-lane` 合法取值校验（与 `TrackType` 一致） */
+const TRACK_LANE_TYPES = new Set<string>([
+  "visual",
+  "dialogue",
+  "narration",
+  "action",
+  "sfx",
+  "info",
+  "environment",
+  "subtitle"
+]);
+
+function parseTrackLaneTypeFromTarget(target: HTMLElement): TrackType | null {
+  const lane = target.closest("[data-track-lane]");
+  const raw = lane?.getAttribute("data-track-lane");
+  if (!raw || !TRACK_LANE_TYPES.has(raw)) return null;
+  return raw as TrackType;
+}
+
+/** 单轨占用区间合并（用于找「该轨上的整条空白」） */
+function mergeTrackItemIntervals(items: TimelineItem[], trackType: TrackType): [number, number][] {
+  const raw = items
+    .filter((it) => it.trackType === trackType)
+    .map((it) => [it.start, it.end] as [number, number]);
+  raw.sort((a, b) => a[0] - b[0]);
+  const out: [number, number][] = [];
+  for (const [s, e] of raw) {
+    if (!out.length || s > out[out.length - 1][1] + TIME_EPS) {
+      out.push([s, e]);
+    } else {
+      out[out.length - 1][1] = Math.max(out[out.length - 1][1], e);
+    }
+  }
+  return out;
+}
+
+/** 区间 [lo, hi] 是否与「指定轨」上任一片段相交 */
+function isRangeEmptyOnTrack(items: TimelineItem[], lo: number, hi: number, trackType: TrackType): boolean {
+  if (hi - lo < GAP_MIN_SEC) return false;
+  for (const it of items) {
+    if (it.trackType !== trackType) continue;
+    if (it.start < hi - TIME_EPS && it.end > lo + TIME_EPS) return false;
+  }
+  return true;
+}
+
+/**
+ * 点选轨内空白：返回「仅在该轨上」包含时刻 `t` 的最大空隙（其它轨可有片段）。
+ * 逻辑与 `globallyEmptyGapAtClick` 相同，仅占用区间改为单轨合并。
+ */
+function trackEmptyGapAtClick(
+  items: TimelineItem[],
+  t: number,
+  canvasRightSec: number,
+  trackType: TrackType
+): { lo: number; hi: number } | null {
+  const merged = mergeTrackItemIntervals(items, trackType);
+  let hiCanvas = Math.max(canvasRightSec, 1);
+  for (const it of items) {
+    if (it.trackType === trackType) hiCanvas = Math.max(hiCanvas, it.end + 1);
+  }
+
+  const contains = (lo: number, hi: number): boolean =>
+    t >= lo - TIME_EPS * 4 && t <= hi + TIME_EPS * 4 && hi - lo >= GAP_MIN_SEC;
+
+  if (merged.length === 0) {
+    const lo = 0;
+    const hi = hiCanvas;
+    return contains(lo, hi) ? { lo, hi } : null;
+  }
+
+  {
+    const lo = 0;
+    const hi = merged[0][0];
+    if (contains(lo, hi)) return { lo, hi };
+  }
+
+  for (let i = 0; i < merged.length - 1; i++) {
+    const lo = merged[i][1];
+    const hi = merged[i + 1][0];
+    if (contains(lo, hi)) return { lo, hi };
+  }
+
+  {
+    const lo = merged[merged.length - 1][1];
+    const hi = hiCanvas;
+    if (contains(lo, hi)) return { lo, hi };
+  }
+
+  return null;
+}
 
 /**
  * 点选空白：返回包含时刻 `t` 的最大全局空隙 [lo, hi]。
@@ -231,6 +329,11 @@ function rollPairsByItemId(items: TimelineItem[]): { leftItemId: string; rightIt
   return pairs;
 }
 
+/** 间隙选中：全局空白（全轨无片段）或仅某一轨上的空白（仅该轨波纹左移） */
+export type TimelineGapSelection =
+  | { scope: "global"; lo: number; hi: number }
+  | { scope: "track"; trackType: TrackType; lo: number; hi: number };
+
 export interface TrackUiState {
   locked?: boolean;
   solo?: boolean;
@@ -268,7 +371,7 @@ export interface TimelineProps {
   /** 删除间隙写回工程前调用（用于撤销快照） */
   onBeforeGapClose?: () => void;
   /** 间隙选中变化（可选，用于侧栏提示等） */
-  onGapSelectionChange?: (gap: { lo: number; hi: number } | null) => void;
+  onGapSelectionChange?: (gap: TimelineGapSelection | null) => void;
   /** 是否正在播放：为 true 时播放头位置由 ref 每帧更新，减轻 React 重绘 */
   playing?: boolean;
 }
@@ -364,6 +467,10 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
   onPlayheadChangeRef.current = onPlayheadChange;
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  const trackOrderRef = useRef(trackOrder);
+  trackOrderRef.current = trackOrder;
+  /** Shift+点击扩选时的锚点 id（最近一次「非 Shift」点在片段上设定的条目） */
+  const selectionRangeAnchorRef = useRef<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   const [rollDrag, setRollDrag] = useState<RollDragState | null>(null);
 
@@ -375,9 +482,11 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     alt: boolean;
     /** true 表示指针移动已超过「点击」阈值，按横向拖选空隙处理 */
     dragExceededClickThreshold: boolean;
+    /** 指针按下时若命中某条 `trackLane`，用于「仅该轨」空隙选中 */
+    laneTrackType: TrackType | null;
   } | null>(null);
-  const [gapPreview, setGapPreview] = useState<{ lo: number; hi: number } | null>(null);
-  const [gapSelect, setGapSelect] = useState<{ lo: number; hi: number } | null>(null);
+  const [gapPreview, setGapPreview] = useState<TimelineGapSelection | null>(null);
+  const [gapSelect, setGapSelect] = useState<TimelineGapSelection | null>(null);
 
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
   /** 框选/间隙拖选挂在 window 上的监听，用 AbortController 在 cancel 时一并移除，避免泄漏 */
@@ -494,16 +603,13 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
   setSelectionRef.current = setSelection;
 
   /**
-   * 框选命中检测：横坐标必须用「时间线容器 scrollLeft + getBoundingClientRect」，
-   * 与 clientXToTime 一致，否则横向滚动后框选全空。
+   * 框选命中检测：横坐标与 `clientXToTime` 一致，用 timelineInner 的视口矩形换算片段左右边，
+   * 避免横向滚动或容器 border 导致框选与可见片段脱节。
    */
   const pickItemsInMarquee = useCallback((x0: number, y0: number, x1: number, y1: number) => {
     const inner = innerRef.current;
-    const cont = containerRef.current;
-    if (!inner || !cont) return;
+    if (!inner) return;
     const ir = inner.getBoundingClientRect();
-    const cr = cont.getBoundingClientRect();
-    const sl = cont.scrollLeft;
     const ml = Math.min(x0, x1);
     const mr = Math.max(x0, x1);
     const mt = Math.min(y0, y1);
@@ -519,8 +625,8 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       if (!lay) continue;
       const stack = stacks.get(it.trackType);
       const lane = stack?.laneById.get(it.id) ?? 0;
-      const clipLeft = cr.left + LABEL_W + it.start * px - sl;
-      const clipRight = cr.left + LABEL_W + it.end * px - sl;
+      const clipLeft = ir.left + LABEL_W + it.start * px;
+      const clipRight = ir.left + LABEL_W + it.end * px;
       const rowTop = stack ? stack.rowTops[lane] ?? 0 : 0;
       const rowH = stack ? stack.rowHeights[lane] ?? lay.bottom - lay.top : lay.bottom - lay.top;
       const clipTop = ir.top + lay.top + rowTop;
@@ -528,16 +634,29 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       if (clipRight >= ml && clipLeft <= mr && clipBot >= mt && clipTop <= mb) ids.push(it.id);
     }
     setSelectionRef.current(ids);
+    /** 框选后_shift 扩选的锚点：排序中最靠前的被选条目 */
+    if (ids.length > 0) {
+      const ord = sortedTimelineItemIds(itemsRef.current, trackOrderRef.current);
+      selectionRangeAnchorRef.current = ord.find((id) => ids.includes(id)) ?? ids[0];
+    } else {
+      selectionRangeAnchorRef.current = null;
+    }
   }, []);
 
   const rollPairs = useMemo(() => rollPairsByItemId(items), [items]);
 
+  /**
+   * 视口坐标 → 时间（秒）。
+   * 必须用 `timelineInner` 的定位矩形换算横坐标：它的屏幕位置已随横向 scroll 变化，
+   * 等价于「contentX = scrollLeft + (clientX - containerViewportLeft)」，且一并吃掉外层 `.timeline` 的 border，
+   * 避免仅用容器 rect + scrollLeft 时漏减 clientLeft 造成播放头与刻度/片段错位。
+   */
   const clientXToTime = (clientX: number): number => {
-    const el = containerRef.current;
-    if (!el) return 0;
-    const rect = el.getBoundingClientRect();
-    const xInContent = el.scrollLeft + (clientX - rect.left);
-    const tt = (xInContent - LABEL_W) / pxPerSec;
+    const innerEl = innerRef.current;
+    if (!innerEl) return 0;
+    const ir = innerEl.getBoundingClientRect();
+    const xInInner = clientX - ir.left;
+    const tt = (xInInner - LABEL_W) / pxPerSec;
     return Math.max(0, tt);
   };
 
@@ -647,7 +766,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
 
       const downstreamAnchor = drag.origEnd;
 
-      const next = itemsRef.current.map((it) => {
+      let next = itemsRef.current.map((it) => {
         const b = baseline.get(it.id);
         if (!b) return it;
 
@@ -671,6 +790,13 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
 
         return { ...it, start: roundTime(b.start), end: roundTime(b.end) };
       });
+
+      /** 画面轨片段：拖动结果与其它画面段不得时间重叠 */
+      const draggedNext = next.find((i) => i.id === drag.itemId);
+      if (draggedNext?.kind === "visualSegment") {
+        const c = clampVisualSegmentInterval(next, drag.itemId, draggedNext.start, draggedNext.end, minDur);
+        next = next.map((it) => (it.id === drag.itemId ? { ...it, start: c.start, end: c.end } : it));
+      }
 
       const minStart = Math.min(...next.map((i) => i.start));
       if (minStart < -TIME_EPS) {
@@ -712,6 +838,21 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       newJ = Math.max(bL.start + 0.1, Math.min(bR.end - 0.1, newJ));
       if (snapEnabled) newJ = snapToCuts(newJ, cuts, snapThresholdSec);
 
+      const rollItemL = itemsRef.current.find((i) => i.id === rollDrag.leftItemId);
+      const rollItemR = itemsRef.current.find((i) => i.id === rollDrag.rightItemId);
+      /** 两侧均为画面轨时，junction 不得使任一侧与其它画面段重叠 */
+      if (rollItemL?.kind === "visualSegment" && rollItemR?.kind === "visualSegment") {
+        newJ = clampVisualRollJunction(
+          itemsRef.current,
+          rollDrag.leftItemId,
+          rollDrag.rightItemId,
+          newJ,
+          bL.start,
+          bR.end,
+          0.1,
+        );
+      }
+
       const next = itemsRef.current.map((it) => {
         if (it.id === rollDrag.leftItemId) return { ...it, end: newJ };
         if (it.id === rollDrag.rightItemId) return { ...it, start: newJ };
@@ -749,7 +890,11 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       const { lo, hi } = gapSelect;
       const delta = hi - lo;
       const next = itemsRef.current.map((it) => {
-        if (it.start >= hi - TIME_EPS) {
+        const shouldRipple =
+          gapSelect.scope === "global"
+            ? it.start >= hi - TIME_EPS
+            : it.trackType === gapSelect.trackType && it.start >= hi - TIME_EPS;
+        if (shouldRipple) {
           return { ...it, start: roundTime(it.start - delta), end: roundTime(it.end - delta) };
         }
         return it;
@@ -882,11 +1027,13 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       startClientY: ev.clientY,
       pointerId: pid,
       alt: false,
-      dragExceededClickThreshold: false
+      dragExceededClickThreshold: false,
+      laneTrackType: parseTrackLaneTypeFromTarget(target)
     };
     setGapPreview(null);
     setGapSelect(null);
     setSelection([]);
+    selectionRangeAnchorRef.current = null;
     setMarquee(null);
 
     const onGapMove = (e: PointerEvent) => {
@@ -901,7 +1048,19 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       if (!sess.dragExceededClickThreshold) return;
       const t1 = clientXToTime(e.clientX);
       const s = sess.startT;
-      setGapPreview({ lo: Math.min(s, t1), hi: Math.max(s, t1) });
+      const lo = Math.min(s, t1);
+      const hi = Math.max(s, t1);
+      if (hi - lo < GAP_MIN_SEC) {
+        setGapPreview(null);
+        return;
+      }
+      if (isRangeGloballyEmpty(itemsRef.current, lo, hi)) {
+        setGapPreview({ scope: "global", lo, hi });
+      } else if (sess.laneTrackType && isRangeEmptyOnTrack(itemsRef.current, lo, hi, sess.laneTrackType)) {
+        setGapPreview({ scope: "track", trackType: sess.laneTrackType, lo, hi });
+      } else {
+        setGapPreview(null);
+      }
     };
     const onGapEnd = (e: PointerEvent) => {
       if (e.pointerId !== pid) return;
@@ -920,12 +1079,27 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       }
 
       if (!sess.dragExceededClickThreshold) {
-        /** 点选：扩展为整条全局空隙 */
+        /** 点选：优先「全轨空白」；否则尝试「仅当前轨空白」 */
         const innerEl = innerRef.current;
         const canvasRightSec = innerEl ? Math.max(0, (innerEl.scrollWidth - LABEL_W) / pxPerSecRef.current) : 120;
-        const g = globallyEmptyGapAtClick(itemsRef.current, sess.startT, canvasRightSec);
-        if (g && isRangeGloballyEmpty(itemsRef.current, g.lo, g.hi)) {
-          setGapSelect(g);
+        const gGlobal = globallyEmptyGapAtClick(itemsRef.current, sess.startT, canvasRightSec);
+        if (gGlobal && isRangeGloballyEmpty(itemsRef.current, gGlobal.lo, gGlobal.hi)) {
+          setGapSelect({ scope: "global", lo: gGlobal.lo, hi: gGlobal.hi });
+        } else if (sess.laneTrackType) {
+          const gTr = trackEmptyGapAtClick(
+            itemsRef.current,
+            sess.startT,
+            canvasRightSec,
+            sess.laneTrackType
+          );
+          if (
+            gTr &&
+            isRangeEmptyOnTrack(itemsRef.current, gTr.lo, gTr.hi, sess.laneTrackType)
+          ) {
+            setGapSelect({ scope: "track", trackType: sess.laneTrackType, lo: gTr.lo, hi: gTr.hi });
+          } else {
+            setGapSelect(null);
+          }
         } else {
           setGapSelect(null);
         }
@@ -936,7 +1110,9 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
         if (hi - lo < GAP_MIN_SEC) {
           setGapSelect(null);
         } else if (isRangeGloballyEmpty(itemsRef.current, lo, hi)) {
-          setGapSelect({ lo, hi });
+          setGapSelect({ scope: "global", lo, hi });
+        } else if (sess.laneTrackType && isRangeEmptyOnTrack(itemsRef.current, lo, hi, sess.laneTrackType)) {
+          setGapSelect({ scope: "track", trackType: sess.laneTrackType, lo, hi });
         } else {
           setGapSelect(null);
         }
@@ -1086,7 +1262,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
           {workShade}
         </div>
 
-        {gapBand ? (
+        {gapBand?.scope === "global" ? (
           <div
             className="gapSelectionBand"
             style={{
@@ -1193,7 +1369,18 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                   <span className="trackLabelText">{trackTypeLabel(tt, t)}</span>
                 </div>
                 <div className="trackLaneColumn">
-                  <div className={`trackLane${dim}`} style={{ minHeight: th }}>
+                  <div className={`trackLane${dim}`} data-track-lane={tt} style={{ minHeight: th }}>
+                    {/* 单轨空隙画在 lane 内，left 与 clip 一致（相对 lane），避免外层推算纵向偏移错误 */}
+                    {gapBand && gapBand.scope === "track" && gapBand.trackType === tt ? (
+                      <div
+                        className="gapSelectionBand gapSelectionBandTrack gapSelectionBandInLane"
+                        style={{
+                          left: gapBand.lo * pxPerSec,
+                          width: Math.max(2, (gapBand.hi - gapBand.lo) * pxPerSec)
+                        }}
+                        aria-hidden
+                      />
+                    ) : null}
                     {rollPairs
                       .filter((p) => items.find((i) => i.id === p.leftItemId)?.trackType === tt)
                       .map((p) => (
@@ -1207,6 +1394,8 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                             if (locked) return;
                             ev.stopPropagation();
                             ev.preventDefault();
+                            setGapSelect(null);
+                            setGapPreview(null);
                             undoPrimedRollRef.current = false;
                             (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
                             setRollDrag({
@@ -1272,8 +1461,37 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                       if (locked) return;
                       ev.stopPropagation();
                       (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
-                      if (ev.ctrlKey || ev.metaKey) toggleInSelection(it.id);
-                      else setSelection([it.id]);
+                      /** 先前若选中了空隙条，点片段应取消空隙选中，避免两种选中状态并存 */
+                      setGapSelect(null);
+                      setGapPreview(null);
+
+                      /** 时间线顺序（先按开始时间，再按轨道顺序），供 Shift 扩选 */
+                      const ordered = sortedTimelineItemIds(itemsRef.current, trackOrderRef.current);
+                      let anchor = selectionRangeAnchorRef.current;
+                      if (!anchor || !ordered.includes(anchor)) {
+                        anchor = selectedIds[0] ?? null;
+                      }
+
+                      if (ev.shiftKey && anchor && ordered.includes(it.id)) {
+                        const ia = ordered.indexOf(anchor);
+                        const ib = ordered.indexOf(it.id);
+                        const lo = Math.min(ia, ib);
+                        const hi = Math.max(ia, ib);
+                        const rangeIds = ordered.slice(lo, hi + 1);
+                        if (ev.ctrlKey || ev.metaKey) {
+                          const union = new Set(selectedIds);
+                          for (const id of rangeIds) union.add(id);
+                          setSelection(Array.from(union));
+                        } else {
+                          setSelection(rangeIds);
+                        }
+                      } else if (ev.ctrlKey || ev.metaKey) {
+                        toggleInSelection(it.id);
+                        selectionRangeAnchorRef.current = it.id;
+                      } else {
+                        setSelection([it.id]);
+                        selectionRangeAnchorRef.current = it.id;
+                      }
 
                       undoPrimedDragRef.current = false;
                       const ripple =

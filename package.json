@@ -1,6 +1,6 @@
 {
   "name": "script-cut",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "description": "文字剧本剪辑（时间轴/ cut / 结构化块）MVP CLI",

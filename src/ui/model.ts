@@ -420,6 +420,47 @@ export function extendClipToMinSpeechDurationWithRipple(
 }
 
 /**
+ * 仅延长当前对白/旁白片段末端至「建议最短时长」，**不**做全局 ripple。
+ *
+ * 用途：避免推进整条时间线时，宁可本地加长本条（可能与后续片段在时间重叠，需在时间轴上手工整理）。
+ * 不会修改 visualSegments、cuts 与其它 clips。
+ */
+export function extendClipToMinSpeechDurationNoRipple(
+  project: ScriptCutProject,
+  clipId: string,
+  params: SpeechModelParams = DEFAULT_SPEECH_PARAMS
+): { next: ScriptCutProject; applied: boolean; suggestedMin: number } {
+  const clip = project.clips.find((c) => c.id === clipId);
+  if (!clip) return { next: project, applied: false, suggestedMin: 0 };
+
+  const type = trackTypeOfClip(project, clip);
+  if (type !== "dialogue" && type !== "narration") {
+    return { next: project, applied: false, suggestedMin: 0 };
+  }
+
+  const est = estimateSpeech(clip.text, params);
+  const suggestedMin = est.minDuration;
+  const curDur = clip.end - clip.start;
+  if (curDur >= suggestedMin) {
+    return { next: project, applied: false, suggestedMin };
+  }
+
+  const delta = suggestedMin - curDur;
+
+  const next: ScriptCutProject = {
+    ...project,
+    clips: project.clips.map((c) => ({ ...c }))
+  };
+
+  const target = next.clips.find((c) => c.id === clipId);
+  if (!target) return { next: project, applied: false, suggestedMin };
+
+  target.end = roundMs(target.end + delta);
+
+  return { next, applied: true, suggestedMin };
+}
+
+/**
  * 按标点拆分 clip，并可选“切分点对齐到 cut”。
  *
  * 设计目标：
@@ -465,7 +506,7 @@ export function splitClipByPunctuationIntoClips(
   const cuts = project.cuts.map((c) => c.t).sort((a, b) => a - b);
   const snap = (t: number) => {
     if (!options.alignToCuts) return t;
-    const thr = options.cutSnapThresholdSec ?? 0.08;
+    const thr = options.cutSnapThresholdSec ?? 0.1;
     return snapToCuts(t, cuts, thr);
   };
 

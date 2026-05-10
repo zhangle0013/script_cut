@@ -44,7 +44,7 @@ export function calcCps(text: string, start: number, end: number): number {
  *
  * - t：候选时间
  * - cuts：cut 时间数组（秒）
- * - thresholdSec：吸附阈值（秒），例如 0.08 表示 80ms 内就吸过去
+ * - thresholdSec：吸附阈值（秒），例如 0.1 表示 100ms 内就吸过去
  */
 export function snapToCuts(t: number, cuts: number[], thresholdSec: number): number {
   if (cuts.length === 0) return t;
