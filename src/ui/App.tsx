@@ -12,6 +12,8 @@ import {
 import { kindLabel, trackTypeLabel } from "./i18n.js";
 import { FeatureHelp } from "./FeatureHelp.js";
 import { useI18n } from "./I18nProvider.js";
+import { readLayoutWidths, writeLayoutWidths, type LayoutWidths } from "./persistedLayout.js";
+import { SidebarSection } from "./SidebarSection.js";
 import type { TimelineHandle, TrackUiState } from "./Timeline.js";
 import { Timeline, TIMELINE_LABEL_COLUMN_PX } from "./Timeline.js";
 import {
@@ -70,6 +72,59 @@ export function App() {
   const [pxPerSec, setPxPerSec] = useState(ZOOM_PX_DEFAULT);
   /** 缩放后是否尽量将播放头滚入可视区（指针锚点缩放后再微调） */
   const [zoomKeepPlayheadVisible, setZoomKeepPlayheadVisible] = useState(true);
+
+  /** 三栏宽度（像素），可拖拽分隔条调整并写入 localStorage */
+  const [layoutWidths, setLayoutWidths] = useState<LayoutWidths>(() => readLayoutWidths());
+
+  /** 左分隔条：向右拖加宽左栏 */
+  const onResizeLeftGutter = useCallback((ev: React.PointerEvent<HTMLDivElement>) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    const startX = ev.clientX;
+    const startLeft = layoutWidths.left;
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - startX;
+      setLayoutWidths((w) => ({
+        ...w,
+        left: Math.max(220, Math.min(440, startLeft + dx))
+      }));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setLayoutWidths((w) => {
+        writeLayoutWidths(w);
+        return w;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [layoutWidths.left]);
+
+  /** 右分隔条：向右拖减窄右栏（中间变宽） */
+  const onResizeRightGutter = useCallback((ev: React.PointerEvent<HTMLDivElement>) => {
+    if (ev.button !== 0) return;
+    ev.preventDefault();
+    const startX = ev.clientX;
+    const startRight = layoutWidths.right;
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - startX;
+      setLayoutWidths((w) => ({
+        ...w,
+        right: Math.max(240, Math.min(560, startRight - dx))
+      }));
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setLayoutWidths((w) => {
+        writeLayoutWidths(w);
+        return w;
+      });
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [layoutWidths.right]);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [snapThresholdSec, setSnapThresholdSec] = useState(0.1);
   const [cpsThreshold, setCpsThreshold] = useState(DEFAULT_CPS_THRESHOLD);
@@ -750,7 +805,12 @@ export function App() {
     <>
     <div className="container">
       <div className="appShell">
-        <div className="workArea">
+        <div
+          className="workArea"
+          style={{
+            gridTemplateColumns: `${layoutWidths.left}px 6px minmax(0, 1fr) 6px ${layoutWidths.right}px`
+          }}
+        >
           <div className="leftBar">
             <div className="leftBarInner">
               <div className="card">
@@ -797,8 +857,7 @@ export function App() {
                 <FeatureHelp show={helpMode} text={t("helpHintSettings")} />
               </div>
 
-              <div className="card">
-                <div className="workflowStepTitle">{t("stepImportExport")}</div>
+              <SidebarSection sectionKey="import" defaultOpen title={t("stepImportExport")}>
                 <div className="row">
                   <label className="btn btnPrimary">
                     {t("importJson")}
@@ -824,7 +883,7 @@ export function App() {
                   </button>
                 </div>
                 <FeatureHelp show={helpMode} text={t("helpHintImportExport")} />
-              </div>
+              </SidebarSection>
 
               {importError ? (
                 <div className="card" style={{ borderColor: "rgba(255,77,77,0.45)" }}>
@@ -834,8 +893,7 @@ export function App() {
                 </div>
               ) : null}
 
-              <div className="card">
-                <div className="workflowStepTitle">{t("stepViewSnap")}</div>
+              <SidebarSection sectionKey="view" defaultOpen title={t("stepViewSnap")}>
                 <div className="row">
                   <span style={{ color: "rgba(255,255,255,0.75)", fontSize: 12 }}>{t("scale")}</span>
                   <input
@@ -920,10 +978,9 @@ export function App() {
                   />
                 </div>
                 <FeatureHelp show={helpMode} text={t("helpHintViewSnap")} />
-              </div>
+              </SidebarSection>
 
-              <div className="card">
-                <div className="workflowStepTitle">{t("stepTrackVisibility")}</div>
+              <SidebarSection sectionKey="tracks" defaultOpen title={t("stepTrackVisibility")}>
                 {!timelineState ? (
                   <div className="workflowMuted">{t("tidyNeedsProject")}</div>
                 ) : (
@@ -978,10 +1035,9 @@ export function App() {
                     <FeatureHelp show={helpMode} text={t("helpHintTrackVisibility")} />
                   </>
                 )}
-              </div>
+              </SidebarSection>
 
-              <div className="card">
-                <div className="workflowStepTitle">{t("stepTidyTimeline")}</div>
+              <SidebarSection sectionKey="tidy" defaultOpen={false} title={t("stepTidyTimeline")}>
                 {!timelineState ? (
                   <>
                     <div className="workflowMuted">{t("tidyNeedsProject")}</div>
@@ -1053,15 +1109,22 @@ export function App() {
                     </div>
                   </>
                 )}
-              </div>
+              </SidebarSection>
 
-              <div className="card">
-                <div className="workflowStepTitle">{t("stepShortcuts")}</div>
+              <SidebarSection sectionKey="shortcuts" defaultOpen={false} title={t("stepShortcuts")}>
                 <div className="workflowMuted">{t("shortcutsHint")}</div>
                 <FeatureHelp show={helpMode} text={t("helpHintShortcuts")} />
-              </div>
+              </SidebarSection>
             </div>
           </div>
+
+          <div
+            className="layoutGutter layoutGutterLeft"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t("layoutResizeLeft")}
+            onPointerDown={onResizeLeftGutter}
+          />
 
           <div className="timelineWrap" tabIndex={-1}>
             {timelineState && <FeatureHelp show={helpMode} text={t("helpHintTimeline")} />}
@@ -1128,7 +1191,20 @@ export function App() {
                     >
                       {t("toolbarFitSelection")}
                     </button>
+                    <input
+                      type="range"
+                      className="toolbarZoomSlider"
+                      min={ZOOM_PX_MIN}
+                      max={ZOOM_PX_MAX}
+                      step={1}
+                      value={pxPerSec}
+                      aria-label={t("toolbarZoomSliderAria")}
+                      title={t("toolbarZoomSliderHint")}
+                      onPointerDown={() => timelineHandleRef.current?.anchorZoomAtTimeSec(playheadSecRef.current)}
+                      onChange={(e) => setPxPerSecClamped(Number(e.target.value))}
+                    />
                   </div>
+                  <span className="toolbarSep" aria-hidden />
                   <button
                     type="button"
                     className={`toolbarBtn${playing ? " toolbarBtnPrimary" : ""}`}
@@ -1181,6 +1257,7 @@ export function App() {
                   >
                     {t("toolbarSplitAllAtPlayhead")}
                   </button>
+                  <span className="toolbarSep" aria-hidden />
                   <div className="toolbarDropdownWrap" ref={newClipMenuRef}>
                     <button
                       type="button"
@@ -1214,6 +1291,7 @@ export function App() {
                       </div>
                     ) : null}
                   </div>
+                  <span className="toolbarSep" aria-hidden />
                   <button type="button" className="toolbarBtn" onClick={undo} title={t("toolbarUndo")}>
                     {t("toolbarUndo")}
                   </button>
@@ -1252,10 +1330,21 @@ export function App() {
             )}
           </div>
 
+          <div
+            className="layoutGutter layoutGutterRight"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={t("layoutResizeRight")}
+            onPointerDown={onResizeRightGutter}
+          />
+
           <div className="rightBar">
             <div className="rightBarInner">
               {!timelineState ? null : (
                 <>
+                  <div className="card workflowMuted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                    {t("rightBarWelcome")}
+                  </div>
                   <div className="card">
                     <div className="cardTitle">{t("inspectorProject")}</div>
                     <div className="kv">

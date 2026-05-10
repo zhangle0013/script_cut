@@ -66,6 +66,12 @@ const messagesZh = {
   toolbarFitAllHint: "调整缩放使整条时间线大致落在视口内，并滚到片头",
   toolbarFitSelection: "适配所选",
   toolbarFitSelectionHint: "将当前选中片段的时间范围适配进视口（需先选中）",
+  toolbarZoomSliderAria: "时间线横向缩放滑块",
+  toolbarZoomSliderHint: "拖动改变每秒像素数（与左侧「缩放」一致）；按住时以播放头为锚",
+  layoutResizeLeft: "拖动调整左栏宽度",
+  layoutResizeRight: "拖动调整右栏宽度",
+  rightBarWelcome:
+    "提示：在中间时间轴点击片段可在此查看详情并编辑；多选时显示条数。可用左侧折叠块收起不常用的整理/快捷键说明。",
   cpsTooltip: "对白、旁白超过该语速会标红提示",
 
   trackVisibilityHint: "点 H 隐藏的轨道可在此重新勾选「显示」，或使用「全部显示」。",
@@ -291,6 +297,12 @@ const messagesEn: Record<MessageKey, string> = {
   toolbarFitAllHint: "Fit the whole timeline in the viewport and scroll to start",
   toolbarFitSelection: "Fit selection",
   toolbarFitSelectionHint: "Fit the time range of selected clips (select clips first)",
+  toolbarZoomSliderAria: "Timeline horizontal zoom slider",
+  toolbarZoomSliderHint: "Drag to change pixels per second (same as left panel). Uses playhead as anchor while dragging.",
+  layoutResizeLeft: "Drag to resize left sidebar",
+  layoutResizeRight: "Drag to resize right sidebar",
+  rightBarWelcome:
+    "Tip: click a clip on the timeline to inspect and edit here; multi-select shows a count. Collapse left sections you don’t need.",
   cpsTooltip: "Dialogue/narration above this rate is highlighted",
 
   trackVisibilityHint: "Tracks hidden with H can be shown again here, or use Show all.",
