@@ -1,4 +1,4 @@
-import React, { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CameraMoveCode, FramingCode, MoveAmplitude, ScriptCutProject, TrackType } from "../types.js";
 import { clampVisualSegmentInterval } from "./visualSegmentClamp.js";
 import {
@@ -13,7 +13,7 @@ import { kindLabel, trackTypeLabel } from "./i18n.js";
 import { FeatureHelp } from "./FeatureHelp.js";
 import { useI18n } from "./I18nProvider.js";
 import type { TimelineHandle, TrackUiState } from "./Timeline.js";
-import { Timeline } from "./Timeline.js";
+import { Timeline, TIMELINE_LABEL_COLUMN_PX } from "./Timeline.js";
 import {
   buildClipboardPayload,
   cloneProject,
@@ -23,8 +23,11 @@ import {
   TIMELINE_SPLIT_EDGE_PAD_SEC
 } from "./editOps.js";
 import {
+  addEmptyClipToProject,
+  addVisualSegmentToProject,
   applyItemsToProject,
   autoGenerateCutsAndRebuildVisualSegments,
+  createBlankScriptCutProject,
   deleteTimelineItemsFromProject,
   extendClipToMinSpeechDurationNoRipple,
   extendClipToMinSpeechDurationWithRipple,
@@ -32,7 +35,9 @@ import {
   readProjectFromJsonText,
   sortedTimelineItemIds,
   splitClipByPunctuationIntoClips,
+  TIMELINE_TRACK_ORDER,
   toTimelineState,
+  updateClipFields,
   updateVisualSegmentFields
 } from "./model.js";
 import { downloadText, editedExportFilename, fmtTime } from "./utils.js";
@@ -50,6 +55,11 @@ import { DEFAULT_SPEECH_PARAMS, estimateSpeech } from "./speechModel.js";
 const DEFAULT_CPS_THRESHOLD = 12;
 const UNDO_CAP = 60;
 
+/** 时间线横向缩放 `pxPerSec` 范围与默认值（与左侧数值框、Timeline 内滚轮一致） */
+const ZOOM_PX_MIN = 40;
+const ZOOM_PX_MAX = 420;
+const ZOOM_PX_DEFAULT = 140;
+
 export function App() {
   const { t, locale, setLocale } = useI18n();
 
@@ -57,7 +67,9 @@ export function App() {
   const projectRef = useRef(project);
   projectRef.current = project;
 
-  const [pxPerSec, setPxPerSec] = useState(140);
+  const [pxPerSec, setPxPerSec] = useState(ZOOM_PX_DEFAULT);
+  /** 缩放后是否尽量将播放头滚入可视区（指针锚点缩放后再微调） */
+  const [zoomKeepPlayheadVisible, setZoomKeepPlayheadVisible] = useState(true);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [snapThresholdSec, setSnapThresholdSec] = useState(0.1);
   const [cpsThreshold, setCpsThreshold] = useState(DEFAULT_CPS_THRESHOLD);
@@ -89,6 +101,15 @@ export function App() {
 
   const [importError, setImportError] = useState<string | null>(null);
   const [helpMode, setHelpMode] = useState(false);
+  /** 「在播放头新建片段」默认落轨 */
+  /** 「新建片段」下拉菜单是否展开（选类型后在播放头插入约 2s 空 clip） */
+  const [newClipMenuOpen, setNewClipMenuOpen] = useState(false);
+  const newClipMenuRef = useRef<HTMLDivElement | null>(null);
+
+  /** 新建画面段弹窗：null 关闭；startSec 为插入时间（由工具栏「新建 ▾」选画面轨打开） */
+  const [newVsModal, setNewVsModal] = useState<{ startSec: number } | null>(null);
+  const [vsFormLabel, setVsFormLabel] = useState("");
+  const [vsFormDuration, setVsFormDuration] = useState("2.5");
 
   /** 播放循环内写回时间线竖线与滚动，与 state 解耦以减轻卡顿 */
   const timelineHandleRef = useRef<TimelineHandle | null>(null);
@@ -112,6 +133,63 @@ export function App() {
     return Math.max(1, m);
   }, [timelineState]);
 
+  /** 与 Timeline 内 Ctrl+滚轮一致，将 pxPerSec 限制在合法区间 */
+  const setPxPerSecClamped = useCallback((n: number) => {
+    setPxPerSec(Math.max(ZOOM_PX_MIN, Math.min(ZOOM_PX_MAX, Math.round(n))));
+  }, []);
+
+  /** 工具栏 ±：以当前播放头为锚缩放 */
+  const onToolbarZoomStep = useCallback((dir: -1 | 1) => {
+    const h = timelineHandleRef.current;
+    if (!h) return;
+    h.anchorZoomAtTimeSec(playheadSecRef.current);
+    setPxPerSec((p) =>
+      Math.max(ZOOM_PX_MIN, Math.min(ZOOM_PX_MAX, Math.round(p * (dir > 0 ? 1.12 : 1 / 1.12))))
+    );
+  }, []);
+
+  /** 恢复默认缩放（100%） */
+  const onToolbarZoomReset = useCallback(() => {
+    const h = timelineHandleRef.current;
+    if (!h) return;
+    h.anchorZoomAtTimeSec(playheadSecRef.current);
+    setPxPerSec(ZOOM_PX_DEFAULT);
+  }, []);
+
+  /** 适配整条时间线进视口（略留边距） */
+  const onFitTimelineAll = useCallback(() => {
+    const h = timelineHandleRef.current;
+    if (!h || !timelineState) return;
+    const w = h.getViewportClientWidth();
+    if (w <= 16) return;
+    const dur = Math.max(0.5, timelineMaxT);
+    const usable = Math.max(80, w - TIMELINE_LABEL_COLUMN_PX - 20);
+    const next = Math.max(ZOOM_PX_MIN, Math.min(ZOOM_PX_MAX, Math.round((usable / dur) * 0.92)));
+    setPxPerSec(next);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => h.scrollToTimeSec(0, "left"));
+    });
+  }, [timelineState, timelineMaxT]);
+
+  /** 适配当前多选片段的时间范围进视口 */
+  const onFitTimelineSelection = useCallback(() => {
+    const h = timelineHandleRef.current;
+    if (!h || !timelineState || selectedIds.length === 0) return;
+    const items = timelineState.items.filter((i) => selectedIds.includes(i.id));
+    if (!items.length) return;
+    const t0 = Math.min(...items.map((i) => i.start));
+    const t1 = Math.max(...items.map((i) => i.end));
+    const dur = Math.max(0.25, t1 - t0);
+    const w = h.getViewportClientWidth();
+    if (w <= 16) return;
+    const usable = Math.max(80, w - TIMELINE_LABEL_COLUMN_PX - 20);
+    const next = Math.max(ZOOM_PX_MIN, Math.min(ZOOM_PX_MAX, Math.round((usable / dur) * 0.92)));
+    setPxPerSec(next);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => h.scrollToTimeSec(t0, "left"));
+    });
+  }, [timelineState, selectedIds]);
+
   useEffect(() => {
     playBoundsRef.current = { maxT: timelineMaxT, workIn: workInSec, workOut: workOutSec };
   }, [timelineMaxT, workInSec, workOutSec]);
@@ -124,6 +202,12 @@ export function App() {
   const selectedSegment = useMemo(() => {
     if (!project || !selectedItem || selectedItem.kind !== "visualSegment") return null;
     return project.visualSegments.find((s) => s.id === selectedItem.segmentId) ?? null;
+  }, [project, selectedItem]);
+
+  /** 检查器编辑 clip 字段时用工程内最新 Clip（与时间线条目同源） */
+  const selectedClip = useMemo(() => {
+    if (!project || !selectedItem || selectedItem.kind !== "clip") return null;
+    return project.clips.find((c) => c.id === selectedItem.clipId) ?? null;
   }, [project, selectedItem]);
 
   /** 手势开始前快照，供撤销（拖拽/roll 由 Timeline 触发） */
@@ -422,6 +506,27 @@ export function App() {
     setTrackHeights({});
     setWorkInSec(null);
     setWorkOutSec(null);
+    setNewClipMenuOpen(false);
+    setNewVsModal(null);
+  };
+
+  /**
+   * 新建空白工程：规范轨道与默认 cut，可直接在时间轴上添加片段；与「清空」不同，会进入可编辑空时间线。
+   */
+  const onNewBlankProject = () => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    setProject(createBlankScriptCutProject());
+    setSelectedIds([]);
+    setPlayheadSec(0);
+    setPlaying(false);
+    setImportError(null);
+    setTrackStates({});
+    setTrackHeights({});
+    setWorkInSec(null);
+    setWorkOutSec(null);
+    setNewClipMenuOpen(false);
+    setNewVsModal(null);
   };
 
   const onChangeItems = (nextItems: Parameters<typeof applyItemsToProject>[1]) => {
@@ -516,6 +621,52 @@ export function App() {
     return timelineState.items.filter((it) => t > it.start + pad && t < it.end - pad).length;
   }, [timelineState, playheadSec]);
 
+  /**
+   * 在播放头处新建一条空 clip（默认约 2s），便于在检查器填写各轨文案。
+   * 画面段落仍由 visualSegments / 切镜管理，不在此创建。
+   */
+  /**
+   * 在播放头时间插入指定轨类型的空 clip（时长由 model 内默认，约 2s）。不含 `visual`（画面段用弹窗）。
+   */
+  const onNewClipAtPlayheadOfType = (trackType: TrackType) => {
+    if (!project) return;
+    if (trackType === "visual") return;
+    beginGesture();
+    const { project: next, newClipId } = addEmptyClipToProject(project, trackType, playheadSec);
+    setProject(next);
+    setSelectedIds([`item_clip_${newClipId}`]);
+    setNewClipMenuOpen(false);
+  };
+
+  /** 工具栏「新建」菜单：按轨类型在播放头插入 clip，或打开画面段弹窗 */
+  const onChooseNewAtPlayhead = (trackType: TrackType) => {
+    if (!project) return;
+    if (trackType === "visual") {
+      setNewClipMenuOpen(false);
+      setNewVsModal({ startSec: playheadSec });
+      return;
+    }
+    onNewClipAtPlayheadOfType(trackType);
+  };
+
+  /** 弹窗确认：写入 visualSegments、重建 cuts、选中新建段 */
+  const confirmNewVisualSegment = () => {
+    if (!project || !newVsModal) return;
+    const dur = Number(vsFormDuration);
+    if (!Number.isFinite(dur) || dur < 0.1) return;
+    beginGesture();
+    const labelArg = vsFormLabel.trim() === "" ? undefined : vsFormLabel.trim();
+    const { project: next, newSegmentId } = addVisualSegmentToProject(
+      project,
+      newVsModal.startSec,
+      dur,
+      labelArg
+    );
+    setProject(next);
+    setSelectedIds([`item_vs_${newSegmentId}`]);
+    setNewVsModal(null);
+  };
+
   const onAutoCuts = () => {
     if (!project) return;
     beginGesture();
@@ -559,7 +710,44 @@ export function App() {
     document.title = t("pageTitle");
   }, [locale, t]);
 
+  /** 打开新建画面段弹窗时重置表单默认值 */
+  useEffect(() => {
+    if (!newVsModal || !project) return;
+    const n = project.visualSegments.length;
+    setVsFormLabel(`Shot ${String(n + 1).padStart(2, "0")}`);
+    setVsFormDuration("2.5");
+  }, [newVsModal, project]);
+
+  /** 弹窗 Esc 关闭 */
+  useEffect(() => {
+    if (!newVsModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNewVsModal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [newVsModal]);
+
+  /** 新建 clip 菜单：点击外部或 Esc 关闭 */
+  useEffect(() => {
+    if (!newClipMenuOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      const el = newClipMenuRef.current;
+      if (el && !el.contains(e.target as Node)) setNewClipMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNewClipMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocMouseDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [newClipMenuOpen]);
+
   return (
+    <>
     <div className="container">
       <div className="appShell">
         <div className="workArea">
@@ -628,6 +816,9 @@ export function App() {
                   <button className="btn" onClick={onExportJson} disabled={!project}>
                     {t("exportJson")}
                   </button>
+                  <button className="btn" type="button" onClick={onNewBlankProject} title={t("newBlankProjectHint")}>
+                    {t("newBlankProject")}
+                  </button>
                   <button className="btn btnDanger" onClick={onReset}>
                     {t("clearProject")}
                   </button>
@@ -650,17 +841,36 @@ export function App() {
                   <input
                     className="input mono"
                     type="number"
-                    min={40}
-                    max={420}
+                    min={ZOOM_PX_MIN}
+                    max={ZOOM_PX_MAX}
                     step={10}
                     value={pxPerSec}
                     onChange={(e) => {
                       const n = Number(e.target.value);
-                      setPxPerSec(Number.isFinite(n) ? n : pxPerSec);
+                      if (!Number.isFinite(n)) return;
+                      setPxPerSec(Math.max(ZOOM_PX_MIN, Math.min(ZOOM_PX_MAX, Math.round(n))));
                     }}
                     title={t("pxPerSecTitle")}
                     style={{ width: 110 }}
                   />
+                </div>
+                <div className="row">
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12,
+                      color: "rgba(255,255,255,0.75)"
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={zoomKeepPlayheadVisible}
+                      onChange={(e) => setZoomKeepPlayheadVisible(e.target.checked)}
+                    />
+                    {t("zoomKeepPlayheadVisible")}
+                  </label>
                 </div>
                 <div className="row">
                   <label
@@ -880,6 +1090,45 @@ export function App() {
                   <span className="mono" style={{ color: "var(--accent)" }}>
                     {fmtTime(playheadSec)}
                   </span>
+                  <div className="toolbarZoomCluster" role="group" aria-label={t("toolbarZoomGroupAria")}>
+                    <button
+                      type="button"
+                      className="toolbarBtn"
+                      onClick={() => onToolbarZoomStep(-1)}
+                      title={t("toolbarZoomOutHint")}
+                    >
+                      −
+                    </button>
+                    <button
+                      type="button"
+                      className="toolbarBtn mono"
+                      onClick={onToolbarZoomReset}
+                      title={t("toolbarZoomResetHint")}
+                      style={{ minWidth: 52 }}
+                    >
+                      {Math.max(1, Math.round((pxPerSec / ZOOM_PX_DEFAULT) * 100))}%
+                    </button>
+                    <button
+                      type="button"
+                      className="toolbarBtn"
+                      onClick={() => onToolbarZoomStep(1)}
+                      title={t("toolbarZoomInHint")}
+                    >
+                      +
+                    </button>
+                    <button type="button" className="toolbarBtn" onClick={onFitTimelineAll} title={t("toolbarFitAllHint")}>
+                      {t("toolbarFitAll")}
+                    </button>
+                    <button
+                      type="button"
+                      className="toolbarBtn"
+                      onClick={onFitTimelineSelection}
+                      disabled={selectedIds.length === 0}
+                      title={t("toolbarFitSelectionHint")}
+                    >
+                      {t("toolbarFitSelection")}
+                    </button>
+                  </div>
                   <button
                     type="button"
                     className={`toolbarBtn${playing ? " toolbarBtnPrimary" : ""}`}
@@ -932,6 +1181,39 @@ export function App() {
                   >
                     {t("toolbarSplitAllAtPlayhead")}
                   </button>
+                  <div className="toolbarDropdownWrap" ref={newClipMenuRef}>
+                    <button
+                      type="button"
+                      className="toolbarBtn"
+                      onClick={() => setNewClipMenuOpen((o) => !o)}
+                      title={t("toolbarNewMenuHint")}
+                      aria-expanded={newClipMenuOpen}
+                      aria-haspopup="menu"
+                      aria-controls="toolbar-new-clip-menu"
+                    >
+                      {t("toolbarNewMenu")} <span aria-hidden>▾</span>
+                    </button>
+                    {newClipMenuOpen ? (
+                      <div
+                        id="toolbar-new-clip-menu"
+                        className="toolbarDropdownPanel"
+                        role="menu"
+                        aria-label={t("newClipTrackLabel")}
+                      >
+                        {TIMELINE_TRACK_ORDER.map((tt) => (
+                          <button
+                            key={tt}
+                            type="button"
+                            className="toolbarDropdownItem"
+                            role="menuitem"
+                            onClick={() => onChooseNewAtPlayhead(tt)}
+                          >
+                            {trackTypeLabel(tt, t)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <button type="button" className="toolbarBtn" onClick={undo} title={t("toolbarUndo")}>
                     {t("toolbarUndo")}
                   </button>
@@ -945,16 +1227,14 @@ export function App() {
                   trackOrder={timelineState.trackOrder}
                   cuts={cuts}
                   pxPerSec={pxPerSec}
+                  onPxPerSecChange={setPxPerSecClamped}
+                  zoomKeepPlayheadVisible={zoomKeepPlayheadVisible}
                   snapEnabled={snapEnabled}
                   snapThresholdSec={snapThresholdSec}
                   cpsThreshold={cpsThreshold}
                   onChangeItems={onChangeItems}
                   selectedIds={selectedIds}
                   onSelectIds={setSelectedIds}
-                  onSelectItem={(id) => {
-                    if (id) setSelectedIds([id]);
-                    else setSelectedIds([]);
-                  }}
                   playheadSec={playheadSec}
                   onPlayheadChange={setPlayheadSec}
                   playing={playing}
@@ -985,6 +1265,10 @@ export function App() {
                       <div className="v">{timelineState.project.clips.length}</div>
                       <div className="k">{t("countCuts")}</div>
                       <div className="v">{timelineState.project.cuts.length}</div>
+                      <div className="k">{t("fieldTimelineEnd")}</div>
+                      <div className="v">{timelineMaxT.toFixed(3)}</div>
+                      <div className="k">{t("fieldTargetDurationMeta")}</div>
+                      <div className="v">{timelineState.project.meta?.targetDurationSec ?? t("none")}</div>
                       <div className="k">{t("inputPath")}</div>
                       <div className="v">{timelineState.project.inputPath}</div>
                     </div>
@@ -1018,14 +1302,144 @@ export function App() {
                           <div className="v">{selectedItem.title}</div>
                           <div className="k">{t("fieldSummary")}</div>
                           <div className="v">{selectedItem.subtitle ?? t("none")}</div>
-                          <div className="k">{t("fieldText")}</div>
-                          <div className="v">{selectedItem.rawText?.slice(0, 260) ?? t("none")}</div>
+                          {selectedItem.kind !== "clip" ? (
+                            <>
+                              <div className="k">{t("fieldText")}</div>
+                              <div className="v">{selectedItem.rawText?.slice(0, 260) ?? t("none")}</div>
+                            </>
+                          ) : null}
                         </div>
+
+                        {/** 各类 clip：直接回写 JSON clips[]（含动作/音效/字幕等非口播轨） */}
+                        {selectedItem.kind === "clip" && selectedClip && project ? (
+                          <div className="kv" style={{ marginBottom: 10 }}>
+                            <div
+                              className="k"
+                              style={{ gridColumn: "1 / -1", color: "var(--muted)", marginBottom: 4 }}
+                            >
+                              {t("clipEditBlockTitle")}
+                            </div>
+                            <div className="k">{t("fieldSpeaker")}</div>
+                            <div className="v" style={{ gridColumn: "2 / -1" }}>
+                              <input
+                                key={`spk-${selectedClip.id}`}
+                                className="inspectorSelect"
+                                defaultValue={selectedClip.speaker ?? ""}
+                                onBlur={(e) => {
+                                  const v = e.target.value.trim();
+                                  const cid = selectedClip.id;
+                                  const next = v === "" ? undefined : v;
+                                  if (next === (selectedClip.speaker ?? undefined)) return;
+                                  beginGesture();
+                                  setProject((p) => (p ? updateClipFields(p, cid, { speaker: next }) : null));
+                                }}
+                              />
+                            </div>
+                            <div className="k">{t("fieldText")}</div>
+                            <div className="v" style={{ gridColumn: "2 / -1" }}>
+                              <textarea
+                                key={`txt-${selectedClip.id}`}
+                                className="inspectorTextarea"
+                                defaultValue={selectedClip.text ?? ""}
+                                onBlur={(e) => {
+                                  const v = e.target.value;
+                                  const cid = selectedClip.id;
+                                  if (v === (selectedClip.text ?? "")) return;
+                                  beginGesture();
+                                  setProject((p) => (p ? updateClipFields(p, cid, { text: v }) : null));
+                                }}
+                              />
+                            </div>
+                            <div className="k">{t("fieldClipMeta")}</div>
+                            <div className="v" style={{ gridColumn: "2 / -1" }}>
+                              <input
+                                key={`meta-${selectedClip.id}`}
+                                className="inspectorSelect"
+                                defaultValue={selectedClip.meta ?? ""}
+                                onBlur={(e) => {
+                                  const v = e.target.value.trim();
+                                  const cid = selectedClip.id;
+                                  const next = v === "" ? undefined : v;
+                                  if (next === (selectedClip.meta ?? undefined)) return;
+                                  beginGesture();
+                                  setProject((p) => (p ? updateClipFields(p, cid, { meta: next }) : null));
+                                }}
+                              />
+                            </div>
+                            <div className="k">{t("fieldSource")}</div>
+                            <div className="v" style={{ gridColumn: "2 / -1" }}>
+                              <input
+                                key={`src-${selectedClip.id}`}
+                                className="inspectorSelect"
+                                defaultValue={selectedClip.source ?? ""}
+                                onBlur={(e) => {
+                                  const v = e.target.value.trim();
+                                  const cid = selectedClip.id;
+                                  const next = v === "" ? undefined : v;
+                                  if (next === (selectedClip.source ?? undefined)) return;
+                                  beginGesture();
+                                  setProject((p) => (p ? updateClipFields(p, cid, { source: next }) : null));
+                                }}
+                              />
+                            </div>
+                            <div className="k">{t("fieldStart")}</div>
+                            <div className="v">
+                              <input
+                                key={`in-${selectedClip.id}`}
+                                className="inspectorSelect"
+                                type="number"
+                                step={0.01}
+                                defaultValue={selectedClip.start}
+                                onBlur={(e) => {
+                                  const num = Number(e.target.value);
+                                  const cid = selectedClip.id;
+                                  if (!Number.isFinite(num)) return;
+                                  if (Math.abs(num - selectedClip.start) < 1e-6) return;
+                                  beginGesture();
+                                  setProject((p) => (p ? updateClipFields(p, cid, { start: num }) : null));
+                                }}
+                              />
+                            </div>
+                            <div className="k">{t("fieldEnd")}</div>
+                            <div className="v">
+                              <input
+                                key={`out-${selectedClip.id}`}
+                                className="inspectorSelect"
+                                type="number"
+                                step={0.01}
+                                defaultValue={selectedClip.end}
+                                onBlur={(e) => {
+                                  const num = Number(e.target.value);
+                                  const cid = selectedClip.id;
+                                  if (!Number.isFinite(num)) return;
+                                  if (Math.abs(num - selectedClip.end) < 1e-6) return;
+                                  beginGesture();
+                                  setProject((p) => (p ? updateClipFields(p, cid, { end: num }) : null));
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
 
                         {selectedSegment && project && (
                           <div className="kv" style={{ marginBottom: 10 }}>
                             <div className="k" style={{ gridColumn: "1 / -1", color: "var(--muted)", marginBottom: 4 }}>
                               {t("segmentBlockTitle")}
+                            </div>
+                            <div className="k">{t("fieldSegmentLabel")}</div>
+                            <div className="v" style={{ gridColumn: "2 / -1" }}>
+                              <input
+                                key={`seg-label-${selectedSegment.id}`}
+                                className="inspectorSelect"
+                                defaultValue={selectedSegment.label}
+                                onBlur={(e) => {
+                                  const sid = selectedSegment.id;
+                                  const v = e.target.value;
+                                  if (v === selectedSegment.label) return;
+                                  beginGesture();
+                                  setProject((p) => (p ? updateVisualSegmentFields(p, sid, { label: v }) : null));
+                                }}
+                              />
                             </div>
                             <div className="k">{t("fieldFramingStart")}</div>
                             <div className="v">
@@ -1223,5 +1637,59 @@ export function App() {
         </div>
       </div>
     </div>
+
+    {newVsModal && project ? (
+      <div
+        className="modalBackdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="new-vs-modal-title"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setNewVsModal(null);
+        }}
+      >
+        <div className="modalPanel" onMouseDown={(e) => e.stopPropagation()}>
+          <h2 id="new-vs-modal-title" className="modalTitle">
+            {t("modalNewVisualTitle")}
+          </h2>
+          <div className="modalField">
+            <label htmlFor="vs-start">{t("modalNewVisualStart")}</label>
+            <input id="vs-start" readOnly value={String(newVsModal.startSec)} className="inspectorSelect" />
+            <div className="workflowMuted" style={{ marginTop: 4, fontSize: 11 }}>
+              ≈ {fmtTime(newVsModal.startSec)}
+            </div>
+          </div>
+          <div className="modalField">
+            <label htmlFor="vs-label">{t("modalNewVisualLabel")}</label>
+            <input
+              id="vs-label"
+              value={vsFormLabel}
+              onChange={(e) => setVsFormLabel(e.target.value)}
+              autoComplete="off"
+            />
+          </div>
+          <div className="modalField">
+            <label htmlFor="vs-dur">{t("modalNewVisualDuration")}</label>
+            <input
+              id="vs-dur"
+              type="number"
+              min={0.1}
+              step={0.1}
+              value={vsFormDuration}
+              onChange={(e) => setVsFormDuration(e.target.value)}
+            />
+          </div>
+          <div className="modalActions">
+            <button type="button" className="btn" onClick={() => setNewVsModal(null)}>
+              {t("modalCancel")}
+            </button>
+            <button type="button" className="btn btnPrimary" onClick={confirmNewVisualSegment}>
+              {t("modalConfirm")}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }

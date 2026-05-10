@@ -1,4 +1,4 @@
-import { mergeMissingTracks } from "../canonicalTracks.js";
+import { buildCanonicalTracks, mergeMissingTracks } from "../canonicalTracks.js";
 import type { Clip, ScriptCutProject, TrackType, VisualSegment } from "../types.js";
 import {
   CAMERA_MOVE_CODES,
@@ -12,6 +12,7 @@ import {
   type MoveAmplitude
 } from "../filmVocabulary.js";
 import { estimateSpeech, splitByPunctuation, type SpeechModelParams, DEFAULT_SPEECH_PARAMS } from "./speechModel.js";
+import { clampVisualSegmentInterval } from "./visualSegmentClamp.js";
 import { snapToCuts } from "./utils.js";
 
 /**
@@ -159,6 +160,21 @@ export function getTrackName(type: TrackType): string {
 }
 
 /**
+ * 时间轴自上而下轨顺序（与 `toTimelineState`、规范轨列表一致）。
+ * 工具栏「在播放头新建」菜单按此顺序列出各轨。
+ */
+export const TIMELINE_TRACK_ORDER: TrackType[] = [
+  "info",
+  "environment",
+  "visual",
+  "action",
+  "dialogue",
+  "narration",
+  "sfx",
+  "subtitle"
+];
+
+/**
  * 将 ScriptCutProject 转换为 UI 需要的 TimelineProjectState。
  */
 export function toTimelineState(project: ScriptCutProject): TimelineProjectState {
@@ -202,22 +218,40 @@ export function toTimelineState(project: ScriptCutProject): TimelineProjectState
     });
   }
 
-  /**
-   * 时间轴自上而下轨顺序
-   * 环境轨在信息/参考与画面之间，便于先读场景再对镜；音效仍在旁白之下。
-   */
-  const trackOrder: TrackType[] = [
-    "info",
-    "environment",
-    "visual",
-    "action",
-    "dialogue",
-    "narration",
-    "sfx",
-    "subtitle"
-  ];
+  return { project, items, trackOrder: TIMELINE_TRACK_ORDER };
+}
 
-  return { project, items, trackOrder };
+/** 空白工程默认片长（秒）：首尾 cut 与 meta.targetDurationSec 初值一致，便于直接拖拽/缩放时间轴 */
+const BLANK_PROJECT_DEFAULT_DURATION_SEC = 30;
+
+/**
+ * 创建可立即编辑的空白工程：规范 `tracks[]`、默认首尾 cut、无片段。
+ * 不经过 Markdown/CLI 解析，供 UI「新建空白工程」使用。
+ */
+export function createBlankScriptCutProject(): ScriptCutProject {
+  const tracks = buildCanonicalTracks();
+  const endT = roundMs(BLANK_PROJECT_DEFAULT_DURATION_SEC);
+  const base: ScriptCutProject = {
+    version: "0.1",
+    inputPath: "",
+    meta: {},
+    tracks,
+    cuts: [
+      { id: "cut_001", t: 0 },
+      { id: "cut_002", t: endT }
+    ],
+    visualSegments: [],
+    clips: []
+  };
+  const synced = withSyncedTargetMeta(base);
+  return {
+    ...synced,
+    meta: {
+      ...synced.meta,
+      /** 无片段时 `computeTimelineEndSec` 为 0，此处强制与默认时间线长度一致 */
+      targetDurationSec: formatMetaTargetDuration(BLANK_PROJECT_DEFAULT_DURATION_SEC)
+    }
+  };
 }
 
 /**
@@ -259,7 +293,152 @@ export function applyItemsToProject(project: ScriptCutProject, items: TimelineIt
 
   // 同步 cuts：用所有 visualSegments 的 start/end 重算（和 CLI 一致）
   next.cuts = buildCutsFromVisualSegments(next.visualSegments);
-  return next;
+  return withSyncedTargetMeta(next);
+}
+
+/**
+ * 工程时间线末端（秒）：所有画面段与所有 clip 的 end 之最大者。
+ */
+export function computeTimelineEndSec(project: ScriptCutProject): number {
+  let m = 0;
+  for (const s of project.visualSegments) m = Math.max(m, s.end);
+  for (const c of project.clips) m = Math.max(m, c.end);
+  return m;
+}
+
+/** 写入 meta 时保留三位小数，避免浮点噪声 */
+function formatMetaTargetDuration(sec: number): string {
+  const x = Math.round(Math.max(0, sec) * 1000) / 1000;
+  return String(x);
+}
+
+/** 在任意改动时长后刷新 `meta.targetDurationSec`，与导出/规范字段一致 */
+function withSyncedTargetMeta(p: ScriptCutProject): ScriptCutProject {
+  return {
+    ...p,
+    meta: { ...p.meta, targetDurationSec: formatMetaTargetDuration(computeTimelineEndSec(p)) }
+  };
+}
+
+/** 供 editOps 等在 model 外写回工程后同步片长 meta，避免与 applyItemsToProject 行为不一致 */
+export function syncTargetDurationMeta(project: ScriptCutProject): ScriptCutProject {
+  return withSyncedTargetMeta(project);
+}
+
+/**
+ * 检查器内编辑 clip 的文本与时间；若 end≤start 则自动拉出 0.1s 最小时长。
+ * 同步更新 `meta.targetDurationSec` 为当前时间线总长。
+ */
+export function updateClipFields(
+  project: ScriptCutProject,
+  clipId: string,
+  patch: Partial<Pick<Clip, "text" | "speaker" | "meta" | "source" | "start" | "end">>
+): ScriptCutProject {
+  const next: ScriptCutProject = {
+    ...project,
+    clips: project.clips.map((c) => {
+      if (c.id !== clipId) return { ...c };
+      const u: Clip = { ...c, ...patch };
+      if (typeof u.start === "number" && typeof u.end === "number" && u.end <= u.start + 1e-6) {
+        u.end = roundMs(u.start + 0.1);
+      }
+      return u;
+    }),
+    visualSegments: project.visualSegments.map((s) => ({ ...s }))
+  };
+  return withSyncedTargetMeta(next);
+}
+
+const DEFAULT_NEW_CLIP_DURATION_SEC = 2;
+
+/**
+ * 在指定时间处新增一条空文本 clip（用于 UI「新建片段」）。
+ * 会自动 `mergeMissingTracks`，并刷新 `meta.targetDurationSec`。
+ * @returns 新工程与新建 clip 的 id（便于 UI 选中 `item_clip_${id}`）
+ */
+export function addEmptyClipToProject(
+  project: ScriptCutProject,
+  trackType: TrackType,
+  startSec: number,
+  durationSec: number = DEFAULT_NEW_CLIP_DURATION_SEC
+): { project: ScriptCutProject; newClipId: string } {
+  const tracks = mergeMissingTracks(project.tracks);
+  const track = tracks.find((tr) => tr.type === trackType);
+  if (!track) throw new Error(`addEmptyClipToProject: missing track type ${trackType}`);
+  const id = `clip_ui_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const start = roundMs(Math.max(0, startSec));
+  const end = roundMs(start + Math.max(0.05, durationSec));
+  const clip: Clip = { id, trackId: track.id, start, end, text: "" };
+  const next: ScriptCutProject = {
+    ...project,
+    tracks,
+    clips: [...project.clips.map((c) => ({ ...c })), clip],
+    visualSegments: project.visualSegments.map((s) => ({ ...s }))
+  };
+  return { project: withSyncedTargetMeta(next), newClipId: id };
+}
+
+const DEFAULT_NEW_VISUAL_DURATION_SEC = 2.5;
+
+/**
+ * 在指定时间处新增一条画面段落（写入 `visualSegments[]`），并重建 `cuts`。
+ * 与同轨其它画面段重叠时，用 `clampVisualSegmentInterval` 钳到最近合法区间（与拖拽规则一致）。
+ *
+ * @returns 新工程与新建 segment 的 id（UI 选中 `item_vs_${id}`）
+ */
+export function addVisualSegmentToProject(
+  project: ScriptCutProject,
+  startSec: number,
+  durationSec: number = DEFAULT_NEW_VISUAL_DURATION_SEC,
+  /** 弹窗/右键插入时用户自定义镜位标签；空串则仍用 Shot NN */
+  labelOverride?: string
+): { project: ScriptCutProject; newSegmentId: string } {
+  const id = `vs_ui_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const labelNum = project.visualSegments.length + 1;
+  const autoLabel = `Shot ${String(labelNum).padStart(2, "0")}`;
+  const trimmed = labelOverride?.trim() ?? "";
+  const label = trimmed !== "" ? trimmed : autoLabel;
+  const start0 = roundMs(Math.max(0, startSec));
+  const end0 = roundMs(start0 + Math.max(0.1, durationSec));
+  const newSeg: VisualSegment = {
+    id,
+    start: start0,
+    end: end0,
+    label,
+    description: "",
+    framing: "",
+    camera: ""
+  };
+
+  const allSegs = [...project.visualSegments, newSeg];
+  const tempItems: TimelineItem[] = allSegs.map((s) => {
+    const card = visualSegmentCardFields(s);
+    const issues = visualSegmentStructIssues(s);
+    return {
+      id: `item_vs_${s.id}`,
+      kind: "visualSegment" as const,
+      segmentId: s.id,
+      trackType: "visual" as const,
+      start: s.start,
+      end: s.end,
+      title: s.label,
+      subtitle: card.subtitle,
+      rawText: card.rawText,
+      ...(issues.length > 0 ? { visualStructIssues: issues } : {})
+    };
+  });
+  const itemId = `item_vs_${id}`;
+  const c = clampVisualSegmentInterval(tempItems, itemId, start0, end0, 0.1);
+  newSeg.start = c.start;
+  newSeg.end = c.end;
+
+  const next: ScriptCutProject = {
+    ...project,
+    visualSegments: [...project.visualSegments.map((s) => ({ ...s })), newSeg],
+    clips: project.clips.map((cl) => ({ ...cl }))
+  };
+  next.cuts = buildCutsFromVisualSegments(next.visualSegments);
+  return { project: withSyncedTargetMeta(next), newSegmentId: id };
 }
 
 function buildCutsFromVisualSegments(segments: VisualSegment[]) {
@@ -290,6 +469,17 @@ export function sortedTimelineItemIds(items: TimelineItem[], trackOrder: TrackTy
 }
 
 /**
+ * 单条轨道内按开始时间排序的 item id（仅用于 Shift+点击扩选）。
+ * 若用全时间线排序取区间，会把其它轨道上、时间夹在中间的片段一并选入。
+ */
+export function sortedTimelineItemIdsOnTrack(items: TimelineItem[], trackType: TrackType): string[] {
+  return items
+    .filter((x) => x.trackType === trackType)
+    .sort((a, b) => a.start - b.start || a.id.localeCompare(b.id))
+    .map((x) => x.id);
+}
+
+/**
  * 从工程中删除选中的时间线条目（画面段或 clip）。
  * 若删光画面段，则用 0～全片最大时间重建 cuts，避免空工程。
  */
@@ -316,7 +506,7 @@ export function deleteTimelineItemsFromProject(project: ScriptCutProject, toRemo
       { id: "cut_002", t: roundMs(maxT) }
     ];
   }
-  return next;
+  return withSyncedTargetMeta(next);
 }
 
 /** 更新画面段的结构化字段（检查器下拉绑定） */
@@ -416,7 +606,7 @@ export function extendClipToMinSpeechDurationWithRipple(
     }));
   }
 
-  return { next, applied: true, suggestedMin };
+  return { next: withSyncedTargetMeta(next), applied: true, suggestedMin };
 }
 
 /**
@@ -457,7 +647,7 @@ export function extendClipToMinSpeechDurationNoRipple(
 
   target.end = roundMs(target.end + delta);
 
-  return { next, applied: true, suggestedMin };
+  return { next: withSyncedTargetMeta(next), applied: true, suggestedMin };
 }
 
 /**
@@ -559,7 +749,7 @@ export function splitClipByPunctuationIntoClips(
     }
   }
 
-  return { next, applied: true, created: newClips.length };
+  return { next: withSyncedTargetMeta(next), applied: true, created: newClips.length };
 }
 
 /**
@@ -683,11 +873,11 @@ export function autoGenerateCutsAndRebuildVisualSegments(
     });
   }
 
-  return {
+  return withSyncedTargetMeta({
     ...project,
     visualSegments,
     cuts: finalCuts.map((t, idx) => ({ id: `cut_${String(idx + 1).padStart(3, "0")}`, t }))
-  };
+  });
 }
 
 /**
@@ -764,7 +954,7 @@ export function resolveOverlapsByShiftingForward(
     }
   }
 
-  return { next, shiftedCount };
+  return { next: withSyncedTargetMeta(next), shiftedCount };
 }
 
 /**
@@ -874,7 +1064,7 @@ export function resolveSpeechOverlapsWithGlobalRipple(
 
   // 最后重算 cuts（保持与工程一致）
   next.cuts = buildCutsFromVisualSegments(next.visualSegments);
-  return { next, shiftedCount, totalShift };
+  return { next: withSyncedTargetMeta(next), shiftedCount, totalShift };
 }
 
 function quantize(sec: number, ms: number): number {
@@ -897,8 +1087,13 @@ export function readProjectFromJsonText(text: string): ScriptCutProject {
   }
   if (!Array.isArray(project.clips)) throw new Error("project 结构不完整（缺 clips）");
   const raw = project as ScriptCutProject;
+  const meta =
+    raw.meta != null && typeof raw.meta === "object" && !Array.isArray(raw.meta)
+      ? (raw.meta as Record<string, string>)
+      : {};
   return {
     ...raw,
+    meta,
     tracks: mergeMissingTracks(raw.tracks)
   };
 }

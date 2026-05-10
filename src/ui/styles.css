@@ -344,11 +344,14 @@ body {
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: auto;
+  /** Alt/Shift 框选时避免拖出文字选中，干扰命中与观感 */
+  user-select: none;
 }
 
 .timelineInner {
   position: relative;
   min-height: 100%;
+  user-select: none;
 }
 
 .timelineUnderlay {
@@ -454,16 +457,12 @@ body {
  */
 .rollJunction {
   position: absolute;
-  top: 50%;
-  transform: translate(-50%, -50%);
   /**
-   * 命中条不宜铺满整轨高度，否则会压住两侧 clip 的边缘手柄；
-   * 父级为整条 lane（flex 撑满），用百分比约束为约「半轨高」。
+   * 仅水平居中；垂直位置与高度由 Timeline 内联样式按「相邻 clip 行高」计算（见 rollJunctionLayoutForPair）。
    */
+  transform: translateX(-50%);
   width: 12px;
-  height: min(72px, 50%);
-  min-height: 18px;
-  max-height: calc(50% - 4px);
+  min-height: 14px;
   border-radius: 5px;
   background: rgba(255, 191, 61, 0.35);
   border: 1px solid rgba(255, 191, 61, 0.65);
@@ -478,21 +477,20 @@ body {
 }
 
 /**
- * 轨高拖动条：放在轨道内容列底部，全宽易点，层级高于 lane 内 clip
+ * 轨高：在左侧轨头（trackLabel）底缘拖动，与时间线内容区轨缝分离，减少误触与框选偏差
  */
-.trackResizeHandle {
+.trackLabelResizeHandle {
   flex-shrink: 0;
   height: 8px;
-  margin: 0;
+  margin: 0 -8px 0 -8px;
   cursor: ns-resize;
   background: rgba(255, 255, 255, 0.06);
   border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  z-index: 10;
+  z-index: 46;
   box-sizing: border-box;
 }
 
-.trackResizeHandle:hover {
+.trackLabelResizeHandle:hover {
   background: rgba(106, 166, 255, 0.22);
 }
 
@@ -512,6 +510,14 @@ body {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.22);
+}
+
+/** 时间线工具栏：缩放 ±、相对 100% 的百分比、适配全部/所选 */
+.toolbarZoomCluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
 }
 
 .timelineToolbar .mono {
@@ -542,6 +548,44 @@ body {
 .toolbarBtnPrimary {
   border-color: rgba(106, 166, 255, 0.45);
   background: rgba(106, 166, 255, 0.14);
+}
+
+/** 工具栏「新建片段」：按钮 + 下拉列出可创建的 clip 轨类型 */
+.toolbarDropdownWrap {
+  position: relative;
+  display: inline-block;
+  z-index: 20;
+}
+
+.toolbarDropdownPanel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 180px;
+  padding: 4px 0;
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  box-sizing: border-box;
+}
+
+.toolbarDropdownItem {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toolbarDropdownItem:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* 空白间隙拖选高亮（诸轨无片段占用时可 Delete 删掉） */
@@ -634,7 +678,8 @@ body {
   min-height: 52px;
   height: auto;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  justify-content: stretch;
   padding: 0 8px;
   box-sizing: border-box;
   background: rgba(11, 13, 18, 0.88);
@@ -643,7 +688,16 @@ body {
   font-size: 12px;
 }
 
-/** 时间线内容列：lane + 底部分隔条式拖动柄 */
+/** 轨头主体：L/S/H + 轨名（与底缘拖动条上下排列） */
+.trackLabelMain {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: 0;
+}
+
+/** 时间线内容列：仅 lane（轨高拖动已移到左侧轨头） */
 .trackLaneColumn {
   flex: 1;
   min-width: 0;
@@ -657,6 +711,66 @@ body {
   flex: 1;
   min-width: 0;
   min-height: 52px;
+  user-select: none;
+}
+
+/** 新建画面段弹窗（App 内联） */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.modalPanel {
+  width: min(400px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  box-sizing: border-box;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.modalTitle {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 14px;
+  color: var(--text);
+}
+
+.modalField {
+  margin-bottom: 12px;
+}
+
+.modalField label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.modalField input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.modalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
 }
 
 .clipStruct {

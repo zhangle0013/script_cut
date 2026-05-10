@@ -1,5 +1,5 @@
 import type { Clip, ScriptCutProject, VisualSegment } from "../types.js";
-import type { TimelineItem } from "./model.js";
+import { syncTargetDurationMeta, type TimelineItem } from "./model.js";
 
 /** JSON 深拷贝工程（撤销栈与剪贴板用） */
 export function cloneProject(project: ScriptCutProject): ScriptCutProject {
@@ -60,7 +60,7 @@ export function splitTimelineItemAtTime(
     vs.splice(idx, 1, segA, segB);
     next.visualSegments = vs;
     next.cuts = buildCutsFromVisualSegments(next.visualSegments);
-    return { next };
+    return { next: syncTargetDurationMeta(next) };
   }
 
   const cidx = next.clips.findIndex((c) => c.id === item.clipId);
@@ -83,7 +83,7 @@ export function splitTimelineItemAtTime(
   const clips = [...next.clips];
   clips.splice(cidx, 1, cLeft, cRight);
   next.clips = clips;
-  return { next };
+  return { next: syncTargetDurationMeta(next) };
 }
 
 function buildCutsFromVisualSegments(segments: VisualSegment[]) {
@@ -151,7 +151,7 @@ export function pasteClipboardAtTime(project: ScriptCutProject, data: TimelineCl
   next.clips = [...next.clips, ...newClips];
   next.visualSegments = [...next.visualSegments, ...newSegs];
   next.cuts = buildCutsFromVisualSegments(next.visualSegments);
-  return next;
+  return syncTargetDurationMeta(next);
 }
 
 /** 在选中内容紧右侧复制一份（间隔 gapSec） */

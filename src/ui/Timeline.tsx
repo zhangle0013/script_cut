@@ -13,19 +13,25 @@ import type { MessageKey } from "./i18n.js";
 import { trackTypeLabel } from "./i18n.js";
 import { useI18n } from "./I18nProvider.js";
 import type { TimelineItem, VisualStructIssue } from "./model.js";
-import { sortedTimelineItemIds } from "./model.js";
+import { sortedTimelineItemIds, sortedTimelineItemIdsOnTrack } from "./model.js";
 import { clampVisualRollJunction, clampVisualSegmentInterval } from "./visualSegmentClamp.js";
 import { calcCps, fmtTime, snapToCuts } from "./utils.js";
 
 const TIME_EPS = 1e-6;
 /** 略减小阈值，短间隙也更容易选中（仍须全轨无片段） */
 const GAP_MIN_SEC = 0.03;
-const LABEL_W = 140;
+/**
+ * 左侧轨头列宽（像素）。导出供 App 计算「适配全部/所选」时的可用宽度，须与 CSS 一致。
+ */
+export const TIMELINE_LABEL_COLUMN_PX = 140;
+const LABEL_W = TIMELINE_LABEL_COLUMN_PX;
 /** 与 `styles.css` 中 `.ruler` 的 height（34px）一致，供垂直布局与框选命中 */
 const RULER_H = 34;
 const DEFAULT_TRACK_H = 52;
 /** 与 `.trackSoundDivider` 的 `height`（border-box）一致，用于垂直布局与框选命中 */
 const SOUND_DIVIDER_H = 6;
+/** 每条轨行 `border-bottom` 高度，计入 `totalH`，避免时间线内层高度与 DOM 累计偏差 */
+const TRACK_ROW_BORDER_BOTTOM_PX = 1;
 const MIN_TRACK_H = 36;
 /** 用户拖动上限；实际显示高度还会按片段文字量自动不低于估算值（见 effectiveTrackHeight） */
 const MAX_TRACK_H = 360;
@@ -143,6 +149,31 @@ function computeTrackStackMetrics(laneItems: TimelineItem[], pxPerSec: number): 
   }
   const totalStackH = y + STACK_TRACK_PAD_PX;
   return { laneById, laneCount, rowHeights, rowTops, totalStackH };
+}
+
+/**
+ * Roll 黄色接点：高度 = 相邻两片段行高较小者的约一半，垂直对齐在两侧片段几何中心之间。
+ * 避免使用「半条轨道高」导致接点落在空白区（与 clip 条错位）。
+ */
+function rollJunctionLayoutForPair(
+  p: { leftItemId: string; rightItemId: string },
+  laneItems: TimelineItem[],
+  stack: TrackStackMetrics
+): { top: number; height: number } | null {
+  const leftIt = laneItems.find((i) => i.id === p.leftItemId);
+  const rightIt = laneItems.find((i) => i.id === p.rightItemId);
+  if (!leftIt || !rightIt) return null;
+  const laneL = stack.laneById.get(leftIt.id) ?? 0;
+  const laneR = stack.laneById.get(rightIt.id) ?? 0;
+  const rowTopL = stack.rowTops[laneL] ?? STACK_TRACK_PAD_PX;
+  const rowHL = stack.rowHeights[laneL] ?? 40;
+  const rowTopR = stack.rowTops[laneR] ?? STACK_TRACK_PAD_PX;
+  const rowHR = stack.rowHeights[laneR] ?? 40;
+  const hClip = Math.min(rowHL, rowHR);
+  const height = Math.max(14, hClip * 0.5);
+  const cy = (rowTopL + rowHL * 0.5 + rowTopR + rowHR * 0.5) * 0.5;
+  const top = cy - height * 0.5;
+  return { top, height };
 }
 
 /** 区间 [lo, hi] 是否与任意片段（任意轨）有交集；无交集即「全轨道空白」 */
@@ -374,11 +405,23 @@ export interface TimelineProps {
   onGapSelectionChange?: (gap: TimelineGapSelection | null) => void;
   /** 是否正在播放：为 true 时播放头位置由 ref 每帧更新，减轻 React 重绘 */
   playing?: boolean;
+  /** 横向缩放（像素/秒）由父组件持有；时间线内 Ctrl/Cmd+滚轮会调用此回调 */
+  onPxPerSecChange?: (nextPxPerSec: number) => void;
+  /** 缩放后是否尽量把播放头滚进可视区（在指针锚点校正之后额外微调） */
+  zoomKeepPlayheadVisible?: boolean;
 }
 
 /** 父组件在播放循环中每帧调用，直接改 DOM + 视口滚动 */
 export interface TimelineHandle {
   setPlayheadTimeSec(t: number): void;
+  /** 滚动容器可视宽度（用于适配缩放） */
+  getViewportClientWidth(): number;
+  /**
+   * 在下一次 `pxPerSec` 更新后，保持「时间 t」在视口中的相对横向位置不变（用于工具栏 ± / 指针缩放）。
+   */
+  anchorZoomAtTimeSec(tSec: number): void;
+  /** 将横向滚动调到使时间 t 出现在视口左侧或居中 */
+  scrollToTimeSec(tSec: number, align?: "left" | "center"): void;
 }
 
 type DragMode = "move" | "resizeLeft" | "resizeRight";
@@ -437,14 +480,17 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     onGestureEnd,
     onBeforeGapClose,
     onGapSelectionChange,
-    playing = false
+    playing = false,
+    onPxPerSecChange,
+    zoomKeepPlayheadVisible = true
   } = props;
 
   const selectedIds = selectedIdsProp ?? (selectedItemId ? [selectedItemId] : []);
 
   const setSelection = (ids: string[]) => {
-    onSelectIds?.(ids);
-    onSelectItem?.(ids[0] ?? null);
+    /** 若同时传了 onSelectIds，则不得以 onSelectItem 再写一遍选中（否则多选会被覆盖成单选） */
+    if (onSelectIds) onSelectIds(ids);
+    else onSelectItem?.(ids[0] ?? null);
   };
 
   const toggleInSelection = (id: string) => {
@@ -489,6 +535,12 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
   const [gapSelect, setGapSelect] = useState<TimelineGapSelection | null>(null);
 
   const [marquee, setMarquee] = useState<MarqueeState | null>(null);
+  /**
+   * 框选起点与 pointerId：必须在 pointerup 时同步读取。
+   * 若仅依赖 setState Updater 里的 marquee 状态，在 React 批处理下可能拿到过期的 null，
+   * 导致 pickItemsInMarquee 被跳过（表现为无法跨轨/轨内框选）。
+   */
+  const marqueeAnchorRef = useRef<{ startX: number; startY: number; pointerId: number } | null>(null);
   /** 框选/间隙拖选挂在 window 上的监听，用 AbortController 在 cancel 时一并移除，避免泄漏 */
   const timelineInteractAbortRef = useRef<AbortController | null>(null);
 
@@ -540,20 +592,26 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
       }
       const h = displayTrackHeight(tt);
       map.set(tt, { top: y, bottom: y + h });
-      y += h;
+      /** 与 DOM 一致：每行底部 1px 分隔线；轨高拖动改在左侧轨头，不再占 lane 下额外一条 */
+      y += h + TRACK_ROW_BORDER_BOTTOM_PX;
     }
     return { map, totalH: y };
   }, [visibleTrackOrder, trackHeights, stackMetricsByTrack]);
 
   /** 供框选/间隙逻辑读取最新布局，避免闭包滞后 */
-  const trackVerticalLayoutRef = useRef(trackVerticalLayout);
-  trackVerticalLayoutRef.current = trackVerticalLayout;
-  const stackMetricsByTrackRef = useRef(stackMetricsByTrack);
-  stackMetricsByTrackRef.current = stackMetricsByTrack;
   const visibleTrackOrderRef = useRef(visibleTrackOrder);
   visibleTrackOrderRef.current = visibleTrackOrder;
   const pxPerSecRef = useRef(pxPerSec);
   pxPerSecRef.current = pxPerSec;
+  const onPxPerSecChangeRef = useRef(onPxPerSecChange);
+  onPxPerSecChangeRef.current = onPxPerSecChange;
+  const playheadSecRef = useRef(playheadSec);
+  playheadSecRef.current = playheadSec;
+  /**
+   * 缩放前记录：锚点时间与其在视口内的横向偏移（视口左缘起算），
+   * 在 `pxPerSec` 更新后的 layout 阶段重算 `scrollLeft`，避免缩放后「跳点」。
+   */
+  const zoomAnchorRef = useRef<{ timeSec: number; viewX: number } | null>(null);
 
   useImperativeHandle(
     ref,
@@ -577,10 +635,55 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
         } else if (x > right - margin) {
           sc.scrollLeft = Math.min(Math.max(0, sc.scrollWidth - w), x - w + margin);
         }
+      },
+      getViewportClientWidth() {
+        return containerRef.current?.clientWidth ?? 0;
+      },
+      anchorZoomAtTimeSec(tSec: number) {
+        const sc = containerRef.current;
+        if (!sc) return;
+        const anchorContentX = LABEL_W + tSec * pxPerSecRef.current;
+        zoomAnchorRef.current = { timeSec: tSec, viewX: anchorContentX - sc.scrollLeft };
+      },
+      scrollToTimeSec(tSec: number, align: "left" | "center" = "left") {
+        const sc = containerRef.current;
+        if (!sc) return;
+        const px = pxPerSecRef.current;
+        const x = LABEL_W + tSec * px;
+        const maxScroll = Math.max(0, sc.scrollWidth - sc.clientWidth);
+        let sl =
+          align === "center" ? x - sc.clientWidth / 2 : x - Math.min(24, Math.max(8, sc.clientWidth * 0.04));
+        sc.scrollLeft = Math.max(0, Math.min(maxScroll, sl));
       }
     }),
     []
   );
+
+  /** `pxPerSec` 变化后：先按锚点校正滚动，再可选把播放头滚入可视区 */
+  useLayoutEffect(() => {
+    const sc = containerRef.current;
+    if (!sc) return;
+    const z = zoomAnchorRef.current;
+    if (z) {
+      zoomAnchorRef.current = null;
+      const anchorContentX = LABEL_W + z.timeSec * pxPerSec;
+      let nextScroll = anchorContentX - z.viewX;
+      const maxScroll = Math.max(0, sc.scrollWidth - sc.clientWidth);
+      sc.scrollLeft = Math.max(0, Math.min(maxScroll, nextScroll));
+    }
+    if (!zoomKeepPlayheadVisible) return;
+    const ph = playheadSecRef.current;
+    const phX = LABEL_W + ph * pxPerSec;
+    const left = sc.scrollLeft;
+    const right = left + sc.clientWidth;
+    const margin = Math.max(48, Math.floor(sc.clientWidth * 0.1));
+    const maxScroll2 = Math.max(0, sc.scrollWidth - sc.clientWidth);
+    if (phX < left + margin) {
+      sc.scrollLeft = Math.max(0, phX - margin);
+    } else if (phX > right - margin) {
+      sc.scrollLeft = Math.min(maxScroll2, phX - sc.clientWidth + margin);
+    }
+  }, [pxPerSec, zoomKeepPlayheadVisible]);
 
   /** 暂停/拖拽标尺：用 state 同步播放头位置 */
   useLayoutEffect(() => {
@@ -603,35 +706,37 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
   setSelectionRef.current = setSelection;
 
   /**
-   * 框选命中检测：横坐标与 `clientXToTime` 一致，用 timelineInner 的视口矩形换算片段左右边，
-   * 避免横向滚动或容器 border 导致框选与可见片段脱节。
+   * 框选命中：用各 `[data-clip-id]` 的 `getBoundingClientRect()` 与选框求交。
+   * 避免手算轨缝、分隔线、border 与 DOM 不一致导致框选偏移。
    */
   const pickItemsInMarquee = useCallback((x0: number, y0: number, x1: number, y1: number) => {
     const inner = innerRef.current;
     if (!inner) return;
-    const ir = inner.getBoundingClientRect();
-    const ml = Math.min(x0, x1);
-    const mr = Math.max(x0, x1);
-    const mt = Math.min(y0, y1);
-    const mb = Math.max(y0, y1);
+    let ml = Math.min(x0, x1);
+    let mr = Math.max(x0, x1);
+    let mt = Math.min(y0, y1);
+    let mb = Math.max(y0, y1);
+    /** 极小选框时仍允许点到片段（避免单击式拖选零面积） */
+    if (mr - ml < 3) {
+      const c = (ml + mr) / 2;
+      ml = c - 2;
+      mr = c + 2;
+    }
+    if (mb - mt < 3) {
+      const c = (mt + mb) / 2;
+      mt = c - 2;
+      mb = c + 2;
+    }
     const ids: string[] = [];
-    const layoutMap = trackVerticalLayoutRef.current.map;
-    const stacks = stackMetricsByTrackRef.current;
-    const px = pxPerSecRef.current;
-    const vis = visibleTrackOrderRef.current;
-    for (const it of itemsRef.current) {
-      if (!vis.includes(it.trackType)) continue;
-      const lay = layoutMap.get(it.trackType);
-      if (!lay) continue;
-      const stack = stacks.get(it.trackType);
-      const lane = stack?.laneById.get(it.id) ?? 0;
-      const clipLeft = ir.left + LABEL_W + it.start * px;
-      const clipRight = ir.left + LABEL_W + it.end * px;
-      const rowTop = stack ? stack.rowTops[lane] ?? 0 : 0;
-      const rowH = stack ? stack.rowHeights[lane] ?? lay.bottom - lay.top : lay.bottom - lay.top;
-      const clipTop = ir.top + lay.top + rowTop;
-      const clipBot = clipTop + rowH;
-      if (clipRight >= ml && clipLeft <= mr && clipBot >= mt && clipTop <= mb) ids.push(it.id);
+    const seen = new Set<string>();
+    for (const el of inner.querySelectorAll<HTMLElement>("[data-clip-id]")) {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+      if (r.right < ml || r.left > mr || r.bottom < mt || r.top > mb) continue;
+      const id = el.getAttribute("data-clip-id");
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      ids.push(id);
     }
     setSelectionRef.current(ids);
     /** 框选后_shift 扩选的锚点：排序中最靠前的被选条目 */
@@ -656,7 +761,8 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     if (!innerEl) return 0;
     const ir = innerEl.getBoundingClientRect();
     const xInInner = clientX - ir.left;
-    const tt = (xInInner - LABEL_W) / pxPerSec;
+    /** 滚轮缩放等场景须读 ref，避免闭包里的 pxPerSec 滞后 */
+    const tt = (xInInner - LABEL_W) / pxPerSecRef.current;
     return Math.max(0, tt);
   };
 
@@ -922,6 +1028,21 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      /** Ctrl/Cmd+滚轮（含触控板捏合）：以指针下时间为锚缩放，并 preventDefault 避免浏览器整页缩放 */
+      if (e.ctrlKey || e.metaKey) {
+        /** 始终拦截，避免浏览器缩放整页；未接 `onPxPerSecChange` 时仅吞掉事件 */
+        e.preventDefault();
+        const ch = onPxPerSecChangeRef.current;
+        if (!ch) return;
+        const t = clientXToTime(e.clientX);
+        const anchorContentX = LABEL_W + t * pxPerSecRef.current;
+        zoomAnchorRef.current = { timeSec: t, viewX: anchorContentX - el.scrollLeft };
+        const factor = Math.exp(-e.deltaY * 0.0015);
+        const cur = pxPerSecRef.current;
+        const next = Math.max(40, Math.min(420, Math.round(cur * factor)));
+        if (next !== cur) ch(next);
+        return;
+      }
       if (e.shiftKey) return;
       const dominant = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (Math.abs(dominant) < 0.25) return;
@@ -968,7 +1089,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     if (target.closest("[data-clip-id]") || target.closest("[data-roll-junction]")) return;
     if (target.closest(".ruler") || target.closest(".trackLabel")) return;
     /** 轨高拖动条：不参与空隙点选/拖选 */
-    if (target.closest(".trackResizeHandle")) return;
+    if (target.closest(".trackLabelResizeHandle")) return;
 
     const host = ev.currentTarget as HTMLElement;
     const pid = ev.pointerId;
@@ -981,6 +1102,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     if (ev.altKey || ev.shiftKey) {
       const sx = ev.clientX;
       const sy = ev.clientY;
+      marqueeAnchorRef.current = { startX: sx, startY: sy, pointerId: pid };
       setMarquee({ startX: sx, startY: sy, curX: sx, curY: sy, pointerId: pid });
       setGapPreview(null);
       setGapSelect(null);
@@ -994,11 +1116,12 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
         if (e.pointerId !== pid) return;
         const ex = e.clientX;
         const ey = e.clientY;
-        setMarquee((m) => {
-          if (!m || m.pointerId !== pid) return null;
-          pickItemsInMarquee(m.startX, m.startY, ex, ey);
-          return null;
-        });
+        const anchor = marqueeAnchorRef.current;
+        marqueeAnchorRef.current = null;
+        setMarquee(null);
+        if (anchor && anchor.pointerId === e.pointerId) {
+          pickItemsInMarquee(anchor.startX, anchor.startY, ex, ey);
+        }
         onGestureEnd?.();
         try {
           host.releasePointerCapture(pid);
@@ -1131,6 +1254,7 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
     timelineInteractAbortRef.current = null;
     gapSessionRef.current = null;
     setGapPreview(null);
+    marqueeAnchorRef.current = null;
     setMarquee(null);
     try {
       (ev.currentTarget as HTMLElement).releasePointerCapture(ev.pointerId);
@@ -1331,45 +1455,64 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
               {showSpeechBlockDivider ? <div className="trackSoundDivider" aria-hidden /> : null}
               <div className="track trackRow" style={{ minHeight: th }}>
                 <div className="trackLabel" style={{ minHeight: th }}>
-                  <div className="trackLabelBtns">
-                    <button
-                      type="button"
-                      className={`trackFlagBtn${trackStates[tt]?.locked ? " active" : ""}`}
-                      title={t("trackLock")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleTrackFlag?.(tt, "locked");
-                      }}
-                    >
-                      L
-                    </button>
-                    <button
-                      type="button"
-                      className={`trackFlagBtn${trackStates[tt]?.solo ? " active" : ""}`}
-                      title={t("trackSolo")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleTrackFlag?.(tt, "solo");
-                      }}
-                    >
-                      S
-                    </button>
-                    <button
-                      type="button"
-                      className={`trackFlagBtn${trackStates[tt]?.hidden ? " active" : ""}`}
-                      title={t("trackHide")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleTrackFlag?.(tt, "hidden");
-                      }}
-                    >
-                      H
-                    </button>
+                  <div className="trackLabelMain">
+                    <div className="trackLabelBtns">
+                      <button
+                        type="button"
+                        className={`trackFlagBtn${trackStates[tt]?.locked ? " active" : ""}`}
+                        title={t("trackLock")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleTrackFlag?.(tt, "locked");
+                        }}
+                      >
+                        L
+                      </button>
+                      <button
+                        type="button"
+                        className={`trackFlagBtn${trackStates[tt]?.solo ? " active" : ""}`}
+                        title={t("trackSolo")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleTrackFlag?.(tt, "solo");
+                        }}
+                      >
+                        S
+                      </button>
+                      <button
+                        type="button"
+                        className={`trackFlagBtn${trackStates[tt]?.hidden ? " active" : ""}`}
+                        title={t("trackHide")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleTrackFlag?.(tt, "hidden");
+                        }}
+                      >
+                        H
+                      </button>
+                    </div>
+                    <span className="trackLabelText">{trackTypeLabel(tt, t)}</span>
                   </div>
-                  <span className="trackLabelText">{trackTypeLabel(tt, t)}</span>
+                  {onTrackHeightChange ? (
+                    <div
+                      className="trackLabelResizeHandle"
+                      onPointerDown={(ev) => {
+                        if (ev.button !== 0) return;
+                        ev.stopPropagation();
+                        ev.preventDefault();
+                        setResizeTrack({ type: tt, startY: ev.clientY, startH: th });
+                      }}
+                      title={t("trackResizeHint")}
+                      aria-hidden
+                    />
+                  ) : null}
                 </div>
                 <div className="trackLaneColumn">
-                  <div className={`trackLane${dim}`} data-track-lane={tt} style={{ minHeight: th }}>
+                  <div
+                    className={`trackLane${dim}`}
+                    data-track-lane={tt}
+                    style={{ minHeight: th }}
+                  >
                     {/* 单轨空隙画在 lane 内，left 与 clip 一致（相对 lane），避免外层推算纵向偏移错误 */}
                     {gapBand && gapBand.scope === "track" && gapBand.trackType === tt ? (
                       <div
@@ -1383,31 +1526,40 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                     ) : null}
                     {rollPairs
                       .filter((p) => items.find((i) => i.id === p.leftItemId)?.trackType === tt)
-                      .map((p) => (
-                        <div
-                          key={`roll-${p.leftItemId}-${p.rightItemId}`}
-                          data-roll-junction
-                          className="rollJunction"
-                          style={{ left: p.junction * pxPerSec }}
-                          title={t("rollEditHint")}
-                          onPointerDown={(ev) => {
-                            if (locked) return;
-                            ev.stopPropagation();
-                            ev.preventDefault();
-                            setGapSelect(null);
-                            setGapPreview(null);
-                            undoPrimedRollRef.current = false;
-                            (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
-                            setRollDrag({
-                              leftItemId: p.leftItemId,
-                              rightItemId: p.rightItemId,
-                              origJunction: p.junction,
-                              startX: ev.clientX,
-                              itemsBaseline: itemsRef.current.map((x) => ({ id: x.id, start: x.start, end: x.end }))
-                            });
-                          }}
-                        />
-                      ))}
+                      .map((p) => {
+                        const rj = rollJunctionLayoutForPair(p, laneItems, stack);
+                        if (!rj) return null;
+                        return (
+                          <div
+                            key={`roll-${p.leftItemId}-${p.rightItemId}`}
+                            data-roll-junction
+                            className="rollJunction"
+                            style={{
+                              left: p.junction * pxPerSec,
+                              top: rj.top,
+                              height: rj.height,
+                              transform: "translateX(-50%)"
+                            }}
+                            title={t("rollEditHint")}
+                            onPointerDown={(ev) => {
+                              if (locked) return;
+                              ev.stopPropagation();
+                              ev.preventDefault();
+                              setGapSelect(null);
+                              setGapPreview(null);
+                              undoPrimedRollRef.current = false;
+                              (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+                              setRollDrag({
+                                leftItemId: p.leftItemId,
+                                rightItemId: p.rightItemId,
+                                origJunction: p.junction,
+                                startX: ev.clientX,
+                                itemsBaseline: itemsRef.current.map((x) => ({ id: x.id, start: x.start, end: x.end }))
+                              });
+                            }}
+                          />
+                        );
+                      })}
                   {laneItems.map((it) => {
                     const left = it.start * pxPerSec;
                     const width = Math.max(8, (it.end - it.start) * pxPerSec);
@@ -1465,32 +1617,47 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                       setGapSelect(null);
                       setGapPreview(null);
 
-                      /** 时间线顺序（先按开始时间，再按轨道顺序），供 Shift 扩选 */
-                      const ordered = sortedTimelineItemIds(itemsRef.current, trackOrderRef.current);
                       let anchor = selectionRangeAnchorRef.current;
-                      if (!anchor || !ordered.includes(anchor)) {
+                      if (!anchor || !itemsRef.current.some((x) => x.id === anchor)) {
                         anchor = selectedIds[0] ?? null;
                       }
 
-                      if (ev.shiftKey && anchor && ordered.includes(it.id)) {
-                        const ia = ordered.indexOf(anchor);
-                        const ib = ordered.indexOf(it.id);
-                        const lo = Math.min(ia, ib);
-                        const hi = Math.max(ia, ib);
-                        const rangeIds = ordered.slice(lo, hi + 1);
-                        if (ev.ctrlKey || ev.metaKey) {
-                          const union = new Set(selectedIds);
-                          for (const id of rangeIds) union.add(id);
-                          setSelection(Array.from(union));
-                        } else {
-                          setSelection(rangeIds);
+                      /**
+                       * Shift+点击：只在**当前轨**内按开始时间扩选区间。
+                       * 全时间线排序的 slice 会把其它轨道上、时间夹在中间的 clip 误选入。
+                       * 锚点与当前片段不同轨时，退化为普通点击（单选当前片段并更新锚点）。
+                       */
+                      let didShiftRange = false;
+                      if (ev.shiftKey && anchor) {
+                        const anchorItem = itemsRef.current.find((x) => x.id === anchor);
+                        if (anchorItem && anchorItem.trackType === it.trackType) {
+                          const ordered = sortedTimelineItemIdsOnTrack(itemsRef.current, it.trackType);
+                          const ia = ordered.indexOf(anchor);
+                          const ib = ordered.indexOf(it.id);
+                          if (ia >= 0 && ib >= 0) {
+                            const lo = Math.min(ia, ib);
+                            const hi = Math.max(ia, ib);
+                            const rangeIds = ordered.slice(lo, hi + 1);
+                            if (ev.ctrlKey || ev.metaKey) {
+                              const union = new Set(selectedIds);
+                              for (const id of rangeIds) union.add(id);
+                              setSelection(Array.from(union));
+                            } else {
+                              setSelection(rangeIds);
+                            }
+                            didShiftRange = true;
+                          }
                         }
-                      } else if (ev.ctrlKey || ev.metaKey) {
-                        toggleInSelection(it.id);
-                        selectionRangeAnchorRef.current = it.id;
-                      } else {
-                        setSelection([it.id]);
-                        selectionRangeAnchorRef.current = it.id;
+                      }
+
+                      if (!didShiftRange) {
+                        if (ev.ctrlKey || ev.metaKey) {
+                          toggleInSelection(it.id);
+                          selectionRangeAnchorRef.current = it.id;
+                        } else {
+                          setSelection([it.id]);
+                          selectionRangeAnchorRef.current = it.id;
+                        }
                       }
 
                       undoPrimedDragRef.current = false;
@@ -1572,18 +1739,6 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
                     );
                   })}
                   </div>
-                  {onTrackHeightChange ? (
-                    <div
-                      className="trackResizeHandle"
-                      onPointerDown={(ev) => {
-                        if (ev.button !== 0) return;
-                        ev.stopPropagation();
-                        /** 从当前「实际显示高度」起算拖动，避免自动撑高后与内部存储不一致导致跳变 */
-                        setResizeTrack({ type: tt, startY: ev.clientY, startH: th });
-                      }}
-                      title={t("trackResizeHint")}
-                    />
-                  ) : null}
                 </div>
               </div>
             </React.Fragment>
