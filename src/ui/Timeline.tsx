@@ -152,6 +152,52 @@ function computeTrackStackMetrics(laneItems: TimelineItem[], pxPerSec: number): 
 }
 
 /**
+ * 轨道“显示高度”（th）大于内容最小高度时，把 lane 的行高按比例放大，使 clip 随轨道一起变高。
+ *
+ * 背景：
+ * - `computeTrackStackMetrics` 的 `rowHeights` 是按文字量估出来的“最小需要高度”
+ * - 用户拖拽轨高变大后，lane 的 `minHeight` 变大了，但 clip 仍用最小 `rowHeights` 渲染
+ *   → 看起来“轨道变高了，片段没变高”（bug 反馈）
+ *
+ * 约束：
+ * - 不改变 laneCount 与 row 顺序，只在“有剩余空间”时把每一行同比例拉伸
+ * - 上/下 padding 与行间 gap 保持不变
+ */
+function stretchStackRowsToTrackHeight(stack: TrackStackMetrics, trackHeightPx: number): TrackStackMetrics {
+  const laneCount = Math.max(1, stack.laneCount);
+  /** lane 可用高度 = 轨道高度 - 上下 padding - 行间 gap */
+  const pad = STACK_TRACK_PAD_PX * 2;
+  const gaps = Math.max(0, laneCount - 1) * STACK_LANE_GAP_PX;
+  const available = Math.max(0, trackHeightPx - pad - gaps);
+  const baseSum = stack.rowHeights.reduce((a, b) => a + b, 0);
+  /** 没有“多出来的空间”时保持原布局（最关键：避免抖动/避免缩小 clip） */
+  if (!(available > baseSum + 0.5) || baseSum <= 0) return stack;
+
+  const scale = available / baseSum;
+  /** 先按比例算出浮点高度，再四舍五入；最后把舍入误差补到最后一行，保证总和≈available */
+  const scaled = stack.rowHeights.map((h) => h * scale);
+  const rowHeights: number[] = [];
+  let used = 0;
+  for (let i = 0; i < scaled.length; i += 1) {
+    const v = Math.max(12, Math.round(scaled[i])); // 最小给个底，避免极端情况下变成 0
+    rowHeights.push(v);
+    used += v;
+  }
+  const diff = Math.round(available) - used;
+  rowHeights[rowHeights.length - 1] = Math.max(12, rowHeights[rowHeights.length - 1] + diff);
+
+  const rowTops: number[] = [];
+  let y = STACK_TRACK_PAD_PX;
+  for (let i = 0; i < laneCount; i += 1) {
+    rowTops.push(y);
+    y += rowHeights[i] ?? 0;
+    if (i < laneCount - 1) y += STACK_LANE_GAP_PX;
+  }
+  const totalStackH = y + STACK_TRACK_PAD_PX;
+  return { ...stack, rowHeights, rowTops, totalStackH };
+}
+
+/**
  * Roll 黄色接点：高度 = 相邻两片段行高较小者的约一半，垂直对齐在两侧片段几何中心之间。
  * 避免使用「半条轨道高」导致接点落在空白区（与 clip 条错位）。
  */
@@ -1445,7 +1491,8 @@ export const Timeline = forwardRef<TimelineHandle, TimelineProps>(function Timel
           const laneItems = itemsByTrack.get(tt) ?? [];
           /** 显示高度：用户值、分层内容高度、上限三者取齐 */
           const th = displayTrackHeight(tt);
-          const stack = stackMetricsByTrack.get(tt)!;
+          /** 轨道变高时同步拉伸每一行的 clip 高度（避免“轨道变高片段不变高”） */
+          const stack = stretchStackRowsToTrackHeight(stackMetricsByTrack.get(tt)!, th);
           const dim =
             anySolo && !trackStates[tt]?.solo ? " trackLaneDimmed" : "";
           const locked = trackStates[tt]?.locked;

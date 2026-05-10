@@ -62,6 +62,8 @@ npm run dev
 
 详细交互说明见界面内「帮助模式」及 `docs/SCRIPT_CUT_AI_SPEC.md`。
 
+与 **Hermes / AI 协作**（生成 JSON 后打开编辑、同源深链、剪贴板导入）见 [`docs/HERMES_INTEGRATION.md`](docs/HERMES_INTEGRATION.md)。
+
 ## 许可
 
 本项目以 **MIT** 许可证开源，见仓库根目录 [`LICENSE`](LICENSE)。

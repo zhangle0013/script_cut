@@ -44,6 +44,13 @@ const messagesZh = {
   newBlankProject: "新建空白工程",
   newBlankProjectHint: "生成可立即编辑的空工程（约 30s 默认片长）；与「清空」不同，会打开空白时间轴而非关闭界面。",
   clearProject: "清空工程",
+  /** Hermes / 自动化：用户复制 JSON 后粘贴导入 */
+  importFromClipboard: "从剪贴板导入 JSON",
+  importClipboardHint: "复制完整 JSON（可含 stats/project/density 顶层）后点此；需浏览器允许读取剪贴板。",
+  importClipboardEmpty: "剪贴板为空，请先复制 JSON。",
+  importClipboardDenied: "无法读取剪贴板（权限被拒绝或非安全上下文）。请改用「导入 JSON」选文件。",
+  importUrlInvalid: "importUrl 参数不是合法 URL。",
+  importUrlCrossOrigin: "importUrl 仅支持与本站同源的地址（安全限制）。跨域请用后端代理到同源路径。",
 
   // —— 快捷说明 ——
   shortcutsHint:
@@ -227,7 +234,7 @@ const messagesZh = {
   helpHintSettings:
     "切换界面语言。帮助模式只增加提示文字，不会改动工程数据。排查问题可在地址栏加 ?debug=1 后刷新，打开控制台查看 [ScriptCut] 日志（详见代码 debugLog）。",
   helpHintImportExport:
-    "导入 CLI 或 AI 生成的 JSON 工程；导出可下载当前时间轴编辑结果，文件名一般为「工程 inputPath 去扩展名 + _edited.json」。新建空白工程会打开规范轨道与空时间线（无需 JSON）。清空会关闭工程并清空选中。",
+    "导入 CLI 或 AI 生成的 JSON 工程；导出可下载当前时间轴编辑结果，文件名一般为「工程 inputPath 去扩展名 + _edited.json」。新建空白工程会打开规范轨道与空时间线（无需 JSON）。清空会关闭工程并清空选中。部署到网站后可用地址参数 ?importUrl=/同站路径.json 自动加载（见 docs/HERMES_INTEGRATION.md）。",
   helpHintImportError: "请对照报错修改 JSON；结构说明见项目内 docs/SCRIPT_CUT_AI_SPEC.md。",
   helpHintViewSnap:
     "缩放（像素/秒）决定时间轴疏密；左侧可勾选缩放后是否尽量把播放头滚进视口。时间线上 **Ctrl/Cmd+滚轮** 以指针位置为锚缩放。工具栏另有 ±、百分比（点按恢复默认）、适配全部/所选。吸附让拖动/拉伸更易对齐切镜点；语速上限用于对白、旁白标红。画面轨结构化字段不合法也会红框提示。",
@@ -277,6 +284,15 @@ const messagesEn: Record<MessageKey, string> = {
   newBlankProjectHint:
     "Creates an editable empty timeline with canonical tracks (~30s default span); unlike Clear, it opens a project instead of closing the editor.",
   clearProject: "Clear",
+  importFromClipboard: "Import JSON from clipboard",
+  importClipboardHint:
+    "Copy full JSON (may include stats/project/density wrapper), then click; browser clipboard permission required.",
+  importClipboardEmpty: "Clipboard is empty; copy JSON first.",
+  importClipboardDenied:
+    "Could not read clipboard (permission denied or insecure context). Use file import instead.",
+  importUrlInvalid: "importUrl is not a valid URL.",
+  importUrlCrossOrigin:
+    "importUrl must be same-origin (security). Proxy cross-origin files to a same-origin path.",
 
   shortcutsHint:
     "Space: play/pause. i / o: work area In/Out. ↑ / ↓: move selection along time order. ← / →: nudge selection (Shift: larger). Delete/Backspace: delete one selected item. Ctrl/Cmd+C/V/D: copy/paste/duplicate. Ctrl/Cmd+Z / Shift+Ctrl+Z: undo/redo. Timeline: **Ctrl/Cmd+wheel** zooms horizontally around the pointer (disable “keep playhead visible” in the left panel if it fights the pointer anchor). Toolbar: zoom − / +, percent (click = reset), fit all / fit selection. 「New ▾」: visual form or ~2s clip by track order. 「Split all at playhead」: razor every crossed item. Clips: Ctrl/Cmd+click toggles; Shift+click range **on the same track**; Ctrl/Cmd+Shift+click unions range. Alt or Shift + drag: marquee. Wheel pans horizontally; Shift+wheel: vertical. Track height: drag track header bottom. Ruler: seek. Handles + Ctrl/⌘: ripple. Global gap (blue) / track gap (amber): Delete ripple rules as before.",
@@ -441,7 +457,7 @@ const messagesEn: Record<MessageKey, string> = {
   helpHintSettings:
     "Change UI language. Help mode only adds notes; it does not change project data. For troubleshooting, add ?debug=1 to the URL, reload, and watch the console for [ScriptCut] logs (see debugLog in code).",
   helpHintImportExport:
-    "Import JSON from the CLI or AI; export downloads your edited timeline as `{input basename}_edited.json`. New blank project opens canonical tracks and an empty timeline without a JSON file. Clear closes the project.",
+    "Import JSON from the CLI or AI; export downloads your edited timeline as `{input basename}_edited.json`. New blank project opens canonical tracks and an empty timeline without a JSON file. Clear closes the project. When hosted, `?importUrl=/same-origin/path.json` auto-loads (see docs/HERMES_INTEGRATION.md).",
   helpHintImportError: "Fix the JSON using the error text; see docs/SCRIPT_CUT_AI_SPEC.md for the schema.",
   helpHintViewSnap:
     "Zoom (px/s) sets timeline density; you can opt to keep the playhead in view after zoom. On the timeline, **Ctrl/Cmd+wheel** zooms around the pointer. The toolbar adds − / +, percent (click to reset default), and fit-all / fit-selection. Snap aligns trims to cuts; max chars/s warns on fast dialogue/narration. Invalid structured fields on visuals show a red outline.",

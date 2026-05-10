@@ -521,10 +521,13 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [helpMode, timelineState, project, selectedIds]);
 
-  const onImportJson = async (file: File) => {
+  /**
+   * 从 JSON 文本加载工程（文件 / 剪贴板 / 同源 ?importUrl= 共用）。
+   * 支持 CLI 输出的 `{ stats, project, density }` 或仅含 `project` 的对象。
+   */
+  const loadProjectFromJsonText = useCallback((text: string) => {
     try {
       setImportError(null);
-      const text = await file.text();
       const p = readProjectFromJsonText(text);
       undoStackRef.current = [];
       redoStackRef.current = [];
@@ -539,7 +542,60 @@ export function App() {
       setProject(null);
       setSelectedIds([]);
     }
+  }, []);
+
+  const onImportJson = async (file: File) => {
+    const text = await file.text();
+    loadProjectFromJsonText(text);
   };
+
+  /** Hermes / 用户：复制整段 JSON 后一键导入（需浏览器剪贴板权限） */
+  const onImportFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.trim()) {
+        setImportError(t("importClipboardEmpty"));
+        return;
+      }
+      loadProjectFromJsonText(text);
+    } catch {
+      setImportError(t("importClipboardDenied"));
+    }
+  };
+
+  /** 启动时同源 ?importUrl=/path/to.json（仅 fetch 本站路径，供 Hermes 部署侧写入文件后打开） */
+  const importUrlFetchedRef = useRef(false);
+  useEffect(() => {
+    if (importUrlFetchedRef.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("importUrl");
+    if (!raw?.trim()) return;
+    importUrlFetchedRef.current = true;
+    let target: URL;
+    try {
+      target = new URL(raw.trim(), window.location.origin);
+    } catch {
+      setImportError(t("importUrlInvalid"));
+      return;
+    }
+    if (target.origin !== window.location.origin) {
+      setImportError(t("importUrlCrossOrigin"));
+      return;
+    }
+    void (async () => {
+      try {
+        const res = await fetch(target.toString(), { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const text = await res.text();
+        loadProjectFromJsonText(text);
+        const clean = new URL(window.location.href);
+        clean.searchParams.delete("importUrl");
+        window.history.replaceState({}, "", clean.pathname + clean.search + clean.hash);
+      } catch (e) {
+        setImportError(e instanceof Error ? e.message : String(e));
+      }
+    })();
+  }, [loadProjectFromJsonText, t]);
 
   const onExportJson = () => {
     if (!timelineState) return;
@@ -880,6 +936,11 @@ export function App() {
                   </button>
                   <button className="btn btnDanger" onClick={onReset}>
                     {t("clearProject")}
+                  </button>
+                </div>
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="btn" type="button" onClick={() => void onImportFromClipboard()} title={t("importClipboardHint")}>
+                    {t("importFromClipboard")}
                   </button>
                 </div>
                 <FeatureHelp show={helpMode} text={t("helpHintImportExport")} />
