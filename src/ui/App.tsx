@@ -601,7 +601,7 @@ export function App() {
     if (!timelineState) return;
     const nextProject = applyItemsToProject(timelineState.project, timelineState.items);
     const content = JSON.stringify({ project: nextProject }, null, 2);
-    downloadText(editedExportFilename(nextProject.inputPath), content, "application/json");
+    downloadText(editedExportFilename(), content, "application/json");
   };
 
   const onReset = () => {

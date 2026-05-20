@@ -234,7 +234,7 @@ const messagesZh = {
   helpHintSettings:
     "切换界面语言。帮助模式只增加提示文字，不会改动工程数据。排查问题可在地址栏加 ?debug=1 后刷新，打开控制台查看 [ScriptCut] 日志（详见代码 debugLog）。",
   helpHintImportExport:
-    "导入 CLI 或 AI 生成的 JSON 工程；导出可下载当前时间轴编辑结果，文件名一般为「工程 inputPath 去扩展名 + _edited.json」。新建空白工程会打开规范轨道与空时间线（无需 JSON）。清空会关闭工程并清空选中。部署到网站后可用地址参数 ?importUrl=/同站路径.json 自动加载（见 docs/HERMES_INTEGRATION.md）。",
+    "导入 CLI 或 AI 生成的 JSON 工程；导出固定下载为「03_ScriptCut已编辑.json」。新建空白工程会打开规范轨道与空时间线（无需 JSON）。清空会关闭工程并清空选中。部署到网站后可用地址参数 ?importUrl=/同站路径.json 自动加载（见 docs/HERMES_INTEGRATION.md）。",
   helpHintImportError: "请对照报错修改 JSON；结构说明见项目内 docs/SCRIPT_CUT_AI_SPEC.md。",
   helpHintViewSnap:
     "缩放（像素/秒）决定时间轴疏密；左侧可勾选缩放后是否尽量把播放头滚进视口。时间线上 **Ctrl/Cmd+滚轮** 以指针位置为锚缩放。工具栏另有 ±、百分比（点按恢复默认）、适配全部/所选。吸附让拖动/拉伸更易对齐切镜点；语速上限用于对白、旁白标红。画面轨结构化字段不合法也会红框提示。",
@@ -457,7 +457,7 @@ const messagesEn: Record<MessageKey, string> = {
   helpHintSettings:
     "Change UI language. Help mode only adds notes; it does not change project data. For troubleshooting, add ?debug=1 to the URL, reload, and watch the console for [ScriptCut] logs (see debugLog in code).",
   helpHintImportExport:
-    "Import JSON from the CLI or AI; export downloads your edited timeline as `{input basename}_edited.json`. New blank project opens canonical tracks and an empty timeline without a JSON file. Clear closes the project. When hosted, `?importUrl=/same-origin/path.json` auto-loads (see docs/HERMES_INTEGRATION.md).",
+    "Import JSON from the CLI or AI; export always downloads as `03_ScriptCut已编辑.json`. New blank project opens canonical tracks and an empty timeline without a JSON file. Clear closes the project. When hosted, `?importUrl=/same-origin/path.json` auto-loads (see docs/HERMES_INTEGRATION.md).",
   helpHintImportError: "Fix the JSON using the error text; see docs/SCRIPT_CUT_AI_SPEC.md for the schema.",
   helpHintViewSnap:
     "Zoom (px/s) sets timeline density; you can opt to keep the playhead in view after zoom. On the timeline, **Ctrl/Cmd+wheel** zooms around the pointer. The toolbar adds − / +, percent (click to reset default), and fit-all / fit-selection. Snap aligns trims to cuts; max chars/s warns on fast dialogue/narration. Invalid structured fields on visuals show a red outline.",
